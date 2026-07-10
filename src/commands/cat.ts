@@ -48,7 +48,7 @@ export function listCats(): string[] {
   }
 }
 
-function listMedia(catName: string): string[] {
+export function listMedia(catName: string): string[] {
   const dir = join(config.cats.mediaDir, catName);
   try {
     return readdirSync(dir, { recursive: true, encoding: "utf8" })
