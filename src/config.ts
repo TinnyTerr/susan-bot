@@ -64,6 +64,9 @@ export const config = {
     },
     cleanupHours: int("EVENT_CLEANUP_HOURS", 24),
     advancedRsvpEnabled: bool("EVENT_ADVANCED_RSVP_ENABLED", true),
+    // Minutes of inactivity before Discord auto-archives an event's thread.
+    // Must be one of 60, 1440, 4320, 10080.
+    threadAutoArchiveMinutes: int("EVENT_THREAD_AUTO_ARCHIVE_MINUTES", 10080),
   },
 
   cats: {

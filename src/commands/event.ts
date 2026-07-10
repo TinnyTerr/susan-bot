@@ -9,6 +9,7 @@ import { config } from "./../config";
 import { db, type EventRow } from "./../db";
 import { buildEventComponents, buildEventEmbed } from "./../eventView";
 import { discordTimestamp } from "./../formatting";
+import { logger } from "./../logger";
 import { hasManagerRole } from "./../permissions";
 
 export const data = new SlashCommandBuilder()
@@ -143,7 +144,27 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       components: buildEventComponents(event.id),
     });
 
-    db.query("UPDATE events SET messageId = ? WHERE id = ?").run(message.id, eventId);
+    let threadId: string | null = null;
+    if ("threads" in channel) {
+      try {
+        const thread = await message.startThread({
+          name: name.slice(0, 100),
+          autoArchiveDuration: config.events.threadAutoArchiveMinutes as 60 | 1440 | 4320 | 10080,
+        });
+        threadId = thread.id;
+        await thread.send(
+          `RSVP above, and use this thread to chat about **${name}**.`,
+        );
+      } catch (err) {
+        logger.error({ err }, "Failed to create event thread");
+      }
+    }
+
+    db.query("UPDATE events SET messageId = ?, threadId = ? WHERE id = ?").run(
+      message.id,
+      threadId,
+      eventId,
+    );
 
     await interaction.reply({
       content: `Event **${name}** scheduled for ${discordTimestamp(startTime, "F")} in <#${channelId}>.`,
@@ -223,6 +244,19 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     db.query("UPDATE events SET cancelled = 1 WHERE id = ?").run(id);
     const updated = db.query<EventRow, [number]>("SELECT * FROM events WHERE id = ?").get(id)!;
     await repostEvent(interaction, updated);
+
+    if (updated.threadId) {
+      try {
+        const thread = await interaction.client.channels.fetch(updated.threadId);
+        if (thread?.isThread()) {
+          await thread.send(`This event was cancelled by <@${interaction.user.id}>.`);
+          await thread.setArchived(true);
+          await thread.setLocked(true);
+        }
+      } catch (err) {
+        logger.error({ err }, "Failed to archive event thread on cancel");
+      }
+    }
 
     await interaction.reply({
       content: `Event #${id} (${event.name}) cancelled.`,
