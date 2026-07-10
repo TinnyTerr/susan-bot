@@ -6,10 +6,14 @@ import {
   MessageFlags,
 } from "discord.js";
 import { config } from "./config";
+import { startAutoUpdateLoop } from "./autoUpdate";
 import * as catCommand from "./commands/cat";
 import * as eventCommand from "./commands/event";
+import * as gitCommand from "./commands/git";
 import * as quiplashCommand from "./commands/quiplash";
+import { logToDiscordChannel, setLoggerClient } from "./discordLogger";
 import { handleRsvpButton, handleRsvpModalSubmit } from "./interactions/rsvp";
+import { logger } from "./logger";
 import { startReminderLoop } from "./reminders";
 import { syncCommands } from "./registerCommands";
 
@@ -20,21 +24,24 @@ const commands = new Map<
   [catCommand.data.name, catCommand],
   [eventCommand.data.name, eventCommand],
   [quiplashCommand.data.name, quiplashCommand],
+  [gitCommand.data.name, gitCommand],
 ]);
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 client.once(Events.ClientReady, async (readyClient) => {
-  console.log(`Logged in as ${readyClient.user.tag}`);
+  logger.info({ tag: readyClient.user.tag }, "Logged in");
+  setLoggerClient(readyClient);
 
   try {
     await syncCommands();
-    console.log("Slash commands synced (stale commands removed).");
+    logger.info("Slash commands synced (stale commands removed)");
   } catch (err) {
-    console.error("Failed to sync slash commands on startup:", err);
+    logger.error({ err }, "Failed to sync slash commands on startup");
   }
 
   startReminderLoop(readyClient);
+  startAutoUpdateLoop(readyClient);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -63,7 +70,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
   } catch (err) {
-    console.error("Error handling interaction:", err);
+    logger.error({ err, interactionId: interaction.id }, "Error handling interaction");
+    await logToDiscordChannel("error", `Error handling an interaction: ${String(err)}`);
     if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
       await interaction
         .reply({ content: "Something went wrong handling that.", flags: MessageFlags.Ephemeral })

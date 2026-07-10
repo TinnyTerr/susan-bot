@@ -8,10 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Built as a tribute to Susan, the owner's late cat.
 
-Three main commands:
+Four main commands:
 - **`/event`**: create/list/info/cancel events with two-tier RSVP system (basic Go/Maybe/No, or advanced with arrival/departure times and notes)
 - **`/quiplash`**: add/import/list/remove game prompts by category, draw random prompts with repeat-avoidance via cooldown tracking
 - **`/cat`**: posts a random photo/video from a per-cat media folder (`CAT_MEDIA_DIR/<name>/`); defaults to `CAT_DEFAULT_NAME` (susan), `name:any` picks a random cat. No database — reads the filesystem on each call.
+- **`/git`**: `status` shows the current commit and whether origin has new commits; `update` (role-gated) pulls, reinstalls deps, and restarts the bot process. See "Auto-update" below.
 
 Tone: bot messages are plain text — no decorative emojis. RSVP emoji are opt-in via `RSVP_EMOJI_*` env vars (blank by default).
 
@@ -40,12 +41,23 @@ On startup, the bot syncs slash commands — any stale commands from older versi
 **Entry Point (`src/index.ts`)**
 - Initializes Discord client with guild intents
 - Routes interactions: slash commands → `commands/` map, buttons/modals → `interactions/rsvp.ts`
-- Starts reminder loop on ready
+- Starts reminder loop and auto-update loop on ready; hands the ready client to `discordLogger.ts` so update/error logs can be posted to Discord
 
 **Command System**
-- `src/commands/event.ts`, `src/commands/quiplash.ts`, and `src/commands/cat.ts` export `data` (SlashCommandBuilder) and `execute(interaction)`; `cat.ts` also exports `autocomplete(interaction)` for cat-name suggestions (routed in `index.ts`)
+- `src/commands/event.ts`, `src/commands/quiplash.ts`, `src/commands/cat.ts`, and `src/commands/git.ts` export `data` (SlashCommandBuilder) and `execute(interaction)`; `cat.ts` also exports `autocomplete(interaction)` for cat-name suggestions (routed in `index.ts`)
 - `src/registerCommands.ts` syncs commands to Discord on startup (fetches live commands, removes stale ones, creates/updates as needed)
 - `src/deploy-commands.ts` does the same sync standalone (useful for debugging or pre-registering before bot starts)
+
+**Git Auto-Update (`src/git.ts`, `src/update.ts`, `src/autoUpdate.ts`, `src/commands/git.ts`)**
+- `git.ts`: thin wrappers around `git` CLI calls (`fetch`, `rev-parse`, `log`, `status --porcelain`, `pull --ff-only`) via `Bun.spawnSync`
+- `update.ts`: `checkForUpdates()` fetches + diffs local vs. `origin/<branch>`; `applyUpdate()` pulls (refuses if the working tree is dirty) and runs `bun install` if `AUTO_UPDATE_INSTALL_DEPS`; `scheduleRestart()` spawns a detached replacement process (`process.execPath` + `process.argv`) and exits — works regardless of how the bot was started (`bun run start`, `bun run dev`, a process manager)
+- `autoUpdate.ts`: `startAutoUpdateLoop()` polls on `AUTO_UPDATE_POLL_INTERVAL_MS` when `AUTO_UPDATE_ENABLED=true` and applies+restarts automatically
+- `commands/git.ts`: `/git status` (anyone) and `/git update` (gated by `UPDATE_MANAGER_ROLE_IDS`)
+- Requires the deployment to be a git checkout with an `origin` remote
+
+**Logging (`src/logger.ts`, `src/discordLogger.ts`)**
+- `logger.ts`: single pino instance, level/pretty-print controlled by `LOG_LEVEL`/`LOG_PRETTY`; used throughout instead of `console.*`
+- `discordLogger.ts`: `setLoggerClient()` (called once on ready) + `logToDiscordChannel(level, message)` mirrors git pulls, updates, and errors to `LOG_CHANNEL_ID` if set; no-op otherwise
 
 **Database Layer (`src/db.ts`)**
 - SQLite database initialized with WAL mode
@@ -92,6 +104,8 @@ All knobs in `.env` (see `.env.example`):
 - **Events**: reminder timings, timezone, locale, RSVP emoji, role-based permissions, cleanup interval, advanced RSVP toggle
 - **Quiplash**: default category, random draw limits, manager roles, repeat-avoidance cooldown
 - **Cats**: `CAT_MEDIA_DIR`, `CAT_DEFAULT_NAME`, `CAT_MAX_UPLOAD_BYTES`
+- **Auto-update**: `UPDATE_MANAGER_ROLE_IDS`, `AUTO_UPDATE_ENABLED`, `AUTO_UPDATE_POLL_INTERVAL_MS`, `AUTO_UPDATE_INSTALL_DEPS`
+- **Logging**: `LOG_LEVEL`, `LOG_PRETTY`, `LOG_CHANNEL_ID`
 - Config object in `src/config.ts` is the single source of truth; it has no defaults beyond fallbacks in the parsing helpers
 
 ## Common Patterns

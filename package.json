@@ -9,8 +9,10 @@
     "deploy-commands": "bun run src/deploy-commands.ts"
   },
   "dependencies": {
+    "chrono-node": "^2.7.7",
     "discord.js": "^14.16.3",
-    "chrono-node": "^2.7.7"
+    "pino": "^10.3.1",
+    "pino-pretty": "^13.1.3"
   },
   "devDependencies": {
     "@types/bun": "latest"

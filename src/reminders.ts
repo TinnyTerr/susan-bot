@@ -2,6 +2,7 @@ import type { Client } from "discord.js";
 import { config } from "./config";
 import { db, type EventRow, type RsvpRow } from "./db";
 import { discordTimestamp } from "./formatting";
+import { logger } from "./logger";
 
 function attendeesLine(eventId: number): string {
   const rsvps = db
@@ -70,8 +71,8 @@ export function startReminderLoop(client: Client) {
     }
   };
 
-  check().catch((err) => console.error("Reminder loop error:", err));
+  check().catch((err) => logger.error({ err }, "Reminder loop error"));
   setInterval(() => {
-    check().catch((err) => console.error("Reminder loop error:", err));
+    check().catch((err) => logger.error({ err }, "Reminder loop error"));
   }, config.events.reminderPollIntervalMs);
 }

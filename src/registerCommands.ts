@@ -2,12 +2,14 @@ import { REST, Routes } from "discord.js";
 import { config } from "./config";
 import * as catCommand from "./commands/cat";
 import * as eventCommand from "./commands/event";
+import * as gitCommand from "./commands/git";
 import * as quiplashCommand from "./commands/quiplash";
 
 export const commandData = [
   catCommand.data.toJSON(),
   eventCommand.data.toJSON(),
   quiplashCommand.data.toJSON(),
+  gitCommand.data.toJSON(),
 ];
 
 /**

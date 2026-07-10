@@ -42,6 +42,12 @@ descriptions) and is centralized in `src/config.ts`. Highlights:
 - **Quiplash**: default/max random draw counts, default category, and repeat-avoidance
   (`QUIPLASH_AVOID_REPEATS` + `QUIPLASH_COOLDOWN_HOURS`) so the same prompt doesn't show
   up again right away.
+- **Auto-update**: `UPDATE_MANAGER_ROLE_IDS` restricts who can run `/git update`.
+  `AUTO_UPDATE_ENABLED` turns on periodic background checks (`AUTO_UPDATE_POLL_INTERVAL_MS`)
+  that pull and restart automatically when new commits land on origin.
+- **Logging**: `LOG_LEVEL` / `LOG_PRETTY` control the [pino](https://getpino.io) console
+  logger. `LOG_CHANNEL_ID` additionally mirrors git pulls, updates, and errors to a
+  Discord channel (blank = console only).
 
 ## Commands
 
@@ -75,3 +81,19 @@ To add a cat, create a folder named after them under `CAT_MEDIA_DIR` (default
 `./media/cats/`) and drop in their photos/videos — e.g. `./media/cats/susan/porch.jpg`.
 Supported formats: jpg, jpeg, png, gif, webp, mp4, mov, webm. Files over the upload
 limit are skipped.
+
+### `/git`
+- `status` — shows the current commit, whether origin has new commits, and whether the
+  working tree has uncommitted local changes. Ephemeral, anyone can run it.
+- `update` — pulls the latest code (fast-forward only), runs `bun install` if
+  dependencies changed, then restarts the bot process. Restricted to
+  `UPDATE_MANAGER_ROLE_IDS` if set. Refuses to run if the working tree has uncommitted
+  local changes.
+
+Requires the bot to run from a git checkout with an `origin` remote. Set
+`AUTO_UPDATE_ENABLED=true` to have the bot check origin on a timer and apply updates
+automatically without anyone running `/git update` — see `.env.example` for the related
+`AUTO_UPDATE_*` variables. Either path restarts the bot by spawning a replacement process
+and exiting, so it works whether you started it with `bun run start`, `bun run dev`, or a
+process manager. Pulls, updates, and errors are logged via pino and, if `LOG_CHANNEL_ID`
+is set, also posted to that channel.

@@ -83,6 +83,28 @@ export const config = {
     avoidRepeats: bool("QUIPLASH_AVOID_REPEATS", true),
     cooldownHours: int("QUIPLASH_COOLDOWN_HOURS", 24),
   },
+
+  update: {
+    // Comma-separated role IDs allowed to run /git update. Empty = anyone.
+    managerRoleIds: roleList("UPDATE_MANAGER_ROLE_IDS"),
+    // If "true", the bot periodically checks origin for new commits and
+    // automatically pulls + restarts itself when it finds any.
+    autoCheckEnabled: bool("AUTO_UPDATE_ENABLED", false),
+    pollIntervalMs: int("AUTO_UPDATE_POLL_INTERVAL_MS", 5 * 60_000),
+    // Run "bun install" after pulling, in case dependencies changed.
+    autoInstall: bool("AUTO_UPDATE_INSTALL_DEPS", true),
+  },
+
+  logging: {
+    // pino level: trace, debug, info, warn, error, fatal, or silent.
+    level: optional("LOG_LEVEL", "info"),
+    // Human-readable console output via pino-pretty. Set "false" for raw JSON
+    // logs (e.g. when piping into a log aggregator).
+    pretty: bool("LOG_PRETTY", true),
+    // Channel git pulls/updates and errors are additionally posted to.
+    // Leave blank to only log to the console.
+    discordChannelId: optional("LOG_CHANNEL_ID", ""),
+  },
 };
 
 export type Config = typeof config;

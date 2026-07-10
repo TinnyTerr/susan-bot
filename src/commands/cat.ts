@@ -8,6 +8,7 @@ import {
 import { readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { config } from "../config";
+import { logger } from "../logger";
 
 const MEDIA_EXTENSIONS = new Set([
   ".jpg",
@@ -118,7 +119,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       files: [new AttachmentBuilder(file, { name: basename(file) })],
     });
   } catch (err) {
-    console.error(`Failed to upload ${file}:`, err);
+    logger.error({ err, file }, "Failed to upload cat media");
     await interaction.editReply({
       content: `Couldn't upload that one (\`${basename(file)}\`). Try again for a different pick.`,
     });
