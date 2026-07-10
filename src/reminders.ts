@@ -13,7 +13,8 @@ function attendeesLine(eventId: number): string {
 }
 
 async function sendReminder(client: Client, event: EventRow, minutesBefore: number) {
-  const channel = await client.channels.fetch(event.channelId).catch(() => null);
+  const targetId = event.threadId ?? event.channelId;
+  const channel = await client.channels.fetch(targetId).catch(() => null);
   if (!channel || !channel.isTextBased() || !("send" in channel)) return;
 
   const when =

@@ -74,6 +74,7 @@ On startup, the bot syncs slash commands — any stale commands from older versi
 - Polls for events approaching within configured lead times (e.g., 1440 min / 60 min / 15 min before)
 - Tracks sent reminders per event per lead time in `event_reminders_sent` table to avoid duplicates
 - Mentions all attendees with "yes" or "maybe" RSVP
+- Posts into the event's thread when one exists (falls back to the channel otherwise)
 
 **Interactions (`src/interactions/rsvp.ts`)**
 - Handles RSVP button clicks (yes/maybe/no) — updates `rsvps` table, edits embed to show counts
@@ -91,7 +92,7 @@ On startup, the bot syncs slash commands — any stale commands from older versi
 3. Command name looked up in `commands` map, `execute()` called
 4. Command reads/writes `db` (events, rsvps, prompts tables)
 5. Command builds Discord embed/components via `eventView.ts` and responds to interaction
-6. For events: message posted to channel, `messageId` stored in `events` table for later updates
+6. For events: message posted to channel, `messageId` stored in `events` table for later updates; a discussion thread is started on that message and its `threadId` stored too, since the channel is expected to be read-only outside of threads
 7. Button/modal interactions route to `interactions/rsvp.ts`, which edits the message in place
 
 Reminder loop runs independently: every `REMINDER_POLL_INTERVAL_MS`, scans for events due within upcoming windows, sends channel messages.
@@ -124,7 +125,7 @@ db.query<RsvpRow, [number]>("SELECT * FROM rsvps WHERE eventId = ?").all(eventId
 
 ## Database Schema
 
-- **events**: id, guildId, channelId, messageId, name, description, startTime, creatorId, createdAt, cancelled
+- **events**: id, guildId, channelId, messageId, threadId, name, description, startTime, creatorId, createdAt, cancelled
 - **event_reminders_sent**: eventId, minutesBefore (tracks which reminders have fired to avoid duplicates)
 - **rsvps**: eventId, userId, status (yes/maybe/no), arrival, departure, note, updatedAt
 - **prompts**: id, guildId, category, text, addedBy, createdAt

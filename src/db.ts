@@ -14,6 +14,7 @@ db.exec(`
     guildId TEXT NOT NULL,
     channelId TEXT NOT NULL,
     messageId TEXT,
+    threadId TEXT,
     name TEXT NOT NULL,
     description TEXT,
     startTime INTEGER NOT NULL,
@@ -22,6 +23,13 @@ db.exec(`
     cancelled INTEGER NOT NULL DEFAULT 0
   );
 `);
+
+try {
+  db.exec(`ALTER TABLE events ADD COLUMN threadId TEXT;`);
+} catch {
+  // column already exists
+}
+
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS event_reminders_sent (
@@ -67,6 +75,7 @@ export interface EventRow {
   guildId: string;
   channelId: string;
   messageId: string | null;
+  threadId: string | null;
   name: string;
   description: string | null;
   startTime: number;
