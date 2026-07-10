@@ -1,15 +1,15 @@
-function required(name: string): string {
+export function required(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Missing required environment variable: ${name}`);
   return value;
 }
 
-function optional(name: string, fallback: string): string {
+export function optional(name: string, fallback: string): string {
   const value = process.env[name];
   return value === undefined || value === "" ? fallback : value;
 }
 
-function intList(name: string, fallback: number[]): number[] {
+export function intList(name: string, fallback: number[]): number[] {
   const raw = process.env[name];
   if (!raw) return fallback;
   return raw
@@ -19,7 +19,7 @@ function intList(name: string, fallback: number[]): number[] {
     .sort((a, b) => b - a);
 }
 
-function roleList(name: string): string[] {
+export function roleList(name: string): string[] {
   const raw = process.env[name];
   if (!raw) return [];
   return raw
@@ -28,13 +28,13 @@ function roleList(name: string): string[] {
     .filter(Boolean);
 }
 
-function bool(name: string, fallback: boolean): boolean {
+export function bool(name: string, fallback: boolean): boolean {
   const raw = process.env[name];
   if (raw === undefined) return fallback;
   return raw.toLowerCase() === "true";
 }
 
-function int(name: string, fallback: number): number {
+export function int(name: string, fallback: number): number {
   const raw = process.env[name];
   if (!raw) return fallback;
   const n = Number.parseInt(raw, 10);

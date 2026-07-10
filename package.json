@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
-    "deploy-commands": "bun run src/deploy-commands.ts"
+    "deploy-commands": "bun run src/deploy-commands.ts",
+    "test": "bun test"
   },
   "dependencies": {
     "chrono-node": "^2.7.7",
