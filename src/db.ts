@@ -70,6 +70,17 @@ db.exec(`
   );
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS quiplash_boards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guildId TEXT NOT NULL,
+    channelId TEXT NOT NULL,
+    messageId TEXT NOT NULL,
+    category TEXT,
+    createdAt INTEGER NOT NULL
+  );
+`);
+
 export interface EventRow {
   id: number;
   guildId: string;
@@ -100,5 +111,14 @@ export interface PromptRow {
   category: string;
   text: string;
   addedBy: string;
+  createdAt: number;
+}
+
+export interface QuiplashBoardRow {
+  id: number;
+  guildId: string;
+  channelId: string;
+  messageId: string;
+  category: string | null;
   createdAt: number;
 }

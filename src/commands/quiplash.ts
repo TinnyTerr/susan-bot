@@ -4,8 +4,10 @@ import {
   SlashCommandBuilder,
 } from "discord.js";
 import { config } from "../config";
-import { db, type PromptRow } from "../db";
+import { db, type PromptRow, type QuiplashBoardRow } from "../db";
+import { logger } from "../logger";
 import { hasManagerRole } from "../permissions";
+import { buildLatestPromptsEmbed, refreshQuiplashBoards } from "../quiplashView";
 
 export const data = new SlashCommandBuilder()
   .setName("quiplash")
@@ -67,6 +69,14 @@ export const data = new SlashCommandBuilder()
   )
   .addSubcommand((sub) =>
     sub.setName("categories").setDescription("List all categories in use"),
+  )
+  .addSubcommand((sub) =>
+    sub
+      .setName("latest")
+      .setDescription("Post/refresh a pinned board of the latest prompts (managers only)")
+      .addStringOption((o) =>
+        o.setName("category").setDescription("Limit the board to one category").setRequired(false),
+      ),
   );
 
 function requireManager(interaction: ChatInputCommandInteraction): boolean {
@@ -98,6 +108,8 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       )
       .run(guildId, category, text, interaction.user.id, Date.now());
 
+    await refreshQuiplashBoards(interaction.client, guildId, category);
+
     await interaction.reply({
       content: `Added prompt #${Number(result.lastInsertRowid)} to **${category}**: "${text}"`,
       flags: MessageFlags.Ephemeral,
@@ -128,6 +140,8 @@ export async function execute(interaction: ChatInputCommandInteraction) {
         insert.run(guildId, category, text, interaction.user.id, now);
       }
     })();
+
+    await refreshQuiplashBoards(interaction.client, guildId, category);
 
     await interaction.reply({
       content: `Imported ${prompts.length} prompt(s) into **${category}**.`,
@@ -240,6 +254,8 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     db.query("DELETE FROM prompts WHERE id = ?").run(id);
     db.query("DELETE FROM prompt_usage WHERE promptId = ?").run(id);
 
+    await refreshQuiplashBoards(interaction.client, guildId, prompt.category);
+
     await interaction.reply({ content: `Removed prompt #${id}: "${prompt.text}"`, flags: MessageFlags.Ephemeral });
     return;
   }
@@ -258,6 +274,81 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
     const lines = rows.map((r) => `**${r.category}** — ${r.count} prompt(s)`);
     await interaction.reply({ content: lines.join("\n"), flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  if (sub === "latest") {
+    if (!requireManager(interaction)) {
+      await interaction.reply({
+        content: "You don't have permission to manage the latest-prompts board.",
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const category = interaction.options.getString("category")?.toLowerCase() ?? null;
+    const embed = buildLatestPromptsEmbed(guildId, category);
+
+    const existing = category
+      ? db
+          .query<QuiplashBoardRow, [string, string]>(
+            "SELECT * FROM quiplash_boards WHERE guildId = ? AND category = ?",
+          )
+          .get(guildId, category)
+      : db
+          .query<QuiplashBoardRow, [string]>(
+            "SELECT * FROM quiplash_boards WHERE guildId = ? AND category IS NULL",
+          )
+          .get(guildId);
+
+    if (existing) {
+      try {
+        const channel = await interaction.client.channels.fetch(existing.channelId);
+        if (channel && channel.isTextBased() && "messages" in channel) {
+          const message = await channel.messages.fetch(existing.messageId);
+          await message.edit({ embeds: [embed] });
+          if (!message.pinned) await message.pin();
+          await interaction.reply({
+            content: `Refreshed the latest-prompts board in <#${existing.channelId}>.`,
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+      } catch {
+        // old board message/channel is gone; fall through and recreate it
+      }
+    }
+
+    const channel = interaction.channel;
+    if (!channel || !channel.isTextBased() || !("send" in channel)) {
+      await interaction.reply({
+        content: "Can't post a board in this channel.",
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const message = await channel.send({ embeds: [embed] });
+    try {
+      await message.pin();
+    } catch (err) {
+      logger.error({ err }, "Failed to pin quiplash latest-prompts board");
+    }
+
+    if (existing) {
+      db.query(
+        "UPDATE quiplash_boards SET channelId = ?, messageId = ?, createdAt = ? WHERE id = ?",
+      ).run(channel.id, message.id, Date.now(), existing.id);
+    } else {
+      db.query(
+        "INSERT INTO quiplash_boards (guildId, channelId, messageId, category, createdAt) VALUES (?, ?, ?, ?, ?)",
+      ).run(guildId, channel.id, message.id, category, Date.now());
+    }
+
+    await interaction.reply({
+      content: `Posted and pinned the latest-prompts board in <#${channel.id}>. It'll stay updated automatically.`,
+      flags: MessageFlags.Ephemeral,
+    });
     return;
   }
 }

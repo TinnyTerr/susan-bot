@@ -48,6 +48,10 @@ export const config = {
 
   databasePath: optional("DATABASE_PATH", "./data/bot.sqlite"),
 
+  // Comma-separated Discord user IDs that bypass every manager-role check
+  // (events, quiplash, git update) regardless of their roles.
+  adminUserIds: roleList("ADMIN_USER_IDS"),
+
   events: {
     defaultChannelId: optional("DEFAULT_EVENT_CHANNEL_ID", ""),
     reminderMinutesBefore: intList("REMINDER_MINUTES_BEFORE", [1440, 60, 15]),
@@ -82,6 +86,7 @@ export const config = {
     defaultCategory: optional("QUIPLASH_DEFAULT_CATEGORY", "general"),
     randomDefaultCount: int("QUIPLASH_RANDOM_DEFAULT_COUNT", 10),
     randomMaxCount: int("QUIPLASH_RANDOM_MAX_COUNT", 50),
+    latestDefaultCount: int("QUIPLASH_LATEST_DEFAULT_COUNT", 10),
     managerRoleIds: roleList("QUIPLASH_MANAGER_ROLE_IDS"),
     avoidRepeats: bool("QUIPLASH_AVOID_REPEATS", true),
     cooldownHours: int("QUIPLASH_COOLDOWN_HOURS", 24),

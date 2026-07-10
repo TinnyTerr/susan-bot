@@ -57,6 +57,14 @@ export const data = new SlashCommandBuilder()
       .addIntegerOption((o) =>
         o.setName("id").setDescription("Event ID").setRequired(true),
       ),
+  )
+  .addSubcommand((sub) =>
+    sub
+      .setName("resend")
+      .setDescription("Resend and pin an event's embed (event managers only)")
+      .addIntegerOption((o) =>
+        o.setName("id").setDescription("Event ID").setRequired(true),
+      ),
   );
 
 function requireManager(interaction: ChatInputCommandInteraction): boolean {
@@ -260,6 +268,70 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
     await interaction.reply({
       content: `Event #${id} (${event.name}) cancelled.`,
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  if (sub === "resend") {
+    if (!requireManager(interaction)) {
+      await interaction.reply({
+        content: "You don't have permission to resend events.",
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const id = interaction.options.getInteger("id", true);
+    const event = db
+      .query<EventRow, [number, string]>("SELECT * FROM events WHERE id = ? AND guildId = ?")
+      .get(id, interaction.guildId!);
+
+    if (!event) {
+      await interaction.reply({ content: `No event #${id} found.`, flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    const channel = await interaction.client.channels.fetch(event.channelId);
+    if (!channel || !channel.isTextBased() || !("send" in channel)) {
+      await interaction.reply({
+        content: "That event's channel isn't available.",
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    if (event.messageId) {
+      try {
+        const oldMessage = await channel.messages.fetch(event.messageId);
+        if (oldMessage.pinned) await oldMessage.unpin();
+        // Strip buttons so old RSVP clicks can't desync from the new pinned
+        // message, which becomes the sole up-to-date copy of this event.
+        await oldMessage.edit({
+          content: "This event has been reposted — see the pinned message below.",
+          embeds: [buildEventEmbed(event)],
+          components: [],
+        });
+      } catch {
+        // old message may already be gone; ignore
+      }
+    }
+
+    const message = await channel.send({
+      embeds: [buildEventEmbed(event)],
+      components: buildEventComponents(event.id),
+    });
+
+    try {
+      await message.pin();
+    } catch (err) {
+      logger.error({ err }, "Failed to pin resent event message");
+    }
+
+    db.query("UPDATE events SET messageId = ? WHERE id = ?").run(message.id, id);
+
+    await interaction.reply({
+      content: `Resent and pinned event #${id} (${event.name}) in <#${event.channelId}>.`,
       flags: MessageFlags.Ephemeral,
     });
     return;

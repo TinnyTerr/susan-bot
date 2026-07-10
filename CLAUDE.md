@@ -9,8 +9,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Built as a tribute to Susan, the owner's late cat.
 
 Four main commands:
-- **`/event`**: create/list/info/cancel events with two-tier RSVP system (basic Go/Maybe/No, or advanced with arrival/departure times and notes)
-- **`/quiplash`**: add/import/list/remove game prompts by category, draw random prompts with repeat-avoidance via cooldown tracking
+- **`/event`**: create/list/info/cancel events with two-tier RSVP system (basic Go/Maybe/No, or advanced with arrival/departure times and notes); `resend` (event managers only) reposts an event's embed as a new pinned message, strips buttons from and unpins the old one (so only the new message is live), useful when the pinned embed gets buried or lost
+- **`/quiplash`**: add/import/list/remove game prompts by category, draw random prompts with repeat-avoidance via cooldown tracking; `latest` (quiplash managers only) posts/refreshes a pinned "latest prompts" board that's automatically re-edited whenever prompts are added, imported, or removed — see `quiplashView.ts`
 - **`/cat`**: posts a random photo/video from a per-cat media folder (`CAT_MEDIA_DIR/<name>/`); defaults to `CAT_DEFAULT_NAME` (susan), `name:any` picks a random cat. No database — reads the filesystem on each call.
 - **`/git`**: `status` shows the current commit and whether origin has new commits; `update` (role-gated) pulls, reinstalls deps, and restarts the bot process. See "Auto-update" below.
 
@@ -82,8 +82,9 @@ On startup, the bot syncs slash commands — any stale commands from older versi
 
 **Utilities**
 - `src/eventView.ts`: builds Discord embeds (`buildEventEmbed()`) and components (`buildEventComponents()`) for event messages
+- `src/quiplashView.ts`: builds the "latest prompts" board embed (`buildLatestPromptsEmbed()`) and re-edits every stored board message for a guild/category (`refreshQuiplashBoards()`), backed by the `quiplash_boards` table (one row per pinned board, `category = NULL` means "all categories")
 - `src/formatting.ts`: Discord timestamp formatting with relative/absolute modes
-- `src/permissions.ts`: role-based access checks
+- `src/permissions.ts`: role-based access checks, plus `isAdmin()` for the bot-wide `ADMIN_USER_IDS` bypass
 
 ## Data Flow
 
@@ -102,6 +103,7 @@ Reminder loop runs independently: every `REMINDER_POLL_INTERVAL_MS`, scans for e
 All knobs in `.env` (see `.env.example`):
 - **Discord**: `DISCORD_TOKEN`, `CLIENT_ID`, `GUILD_ID` (optional, for fast propagation)
 - **Database**: `DATABASE_PATH` (defaults to `./data/bot.sqlite`)
+- **Admin**: `ADMIN_USER_IDS` (comma-separated Discord user IDs) bypass every manager-role check bot-wide (events, quiplash, `/git update`)
 - **Events**: reminder timings, timezone, locale, RSVP emoji, role-based permissions, cleanup interval, advanced RSVP toggle
 - **Quiplash**: default category, random draw limits, manager roles, repeat-avoidance cooldown
 - **Cats**: `CAT_MEDIA_DIR`, `CAT_DEFAULT_NAME`, `CAT_MAX_UPLOAD_BYTES`
@@ -111,7 +113,7 @@ All knobs in `.env` (see `.env.example`):
 
 ## Common Patterns
 
-**Role-based Access**: Use `hasManagerRole(interaction, config.events.managerRoleIds)` or `config.quiplash.managerRoleIds`. If role list is empty, anyone can act.
+**Role-based Access**: Use `hasManagerRole(interaction, config.events.managerRoleIds)` or `config.quiplash.managerRoleIds`. If role list is empty, anyone can act. `hasManagerRole` always allows users whose ID is in `config.adminUserIds` (see `isAdmin()` in `src/permissions.ts`), regardless of role list.
 
 **Timestamps**: Store milliseconds since epoch in DB (JavaScript native). Format for Discord with `discordTimestamp(ms, "f" | "R")` — "f" for absolute, "R" for relative ("in 2 hours").
 
@@ -130,5 +132,6 @@ db.query<RsvpRow, [number]>("SELECT * FROM rsvps WHERE eventId = ?").all(eventId
 - **rsvps**: eventId, userId, status (yes/maybe/no), arrival, departure, note, updatedAt
 - **prompts**: id, guildId, category, text, addedBy, createdAt
 - **prompt_usage**: promptId, usedAt (tracks when each prompt was drawn for cooldown logic)
+- **quiplash_boards**: id, guildId, channelId, messageId, category (nullable — NULL means "all categories"), createdAt (tracks pinned `/quiplash latest` boards so they can be re-edited on every add/import/remove)
 
 All timestamps are milliseconds since epoch. Foreign keys are not enforced (bun:sqlite doesn't enable them by default).
