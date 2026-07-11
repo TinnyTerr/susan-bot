@@ -335,8 +335,11 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       try {
         const oldThread = await interaction.client.channels.fetch(event.threadId);
         if (oldThread?.isThread()) {
-          await oldThread.send("This event was reposted — see the new pinned message and thread below.");
+          // No message here: posting one would bump the old thread back to
+          // "active" in the channel's thread list, looking like a second
+          // new message alongside the freshly reposted one.
           await oldThread.setArchived(true);
+          await oldThread.setLocked(true);
         }
       } catch (err) {
         logger.error({ err }, "Failed to archive old event thread on resend");
