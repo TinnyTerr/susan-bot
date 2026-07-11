@@ -331,14 +331,43 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       }
     }
 
+    if (event.threadId) {
+      try {
+        const oldThread = await interaction.client.channels.fetch(event.threadId);
+        if (oldThread?.isThread()) {
+          await oldThread.send("This event was reposted — see the new pinned message and thread below.");
+          await oldThread.setArchived(true);
+        }
+      } catch (err) {
+        logger.error({ err }, "Failed to archive old event thread on resend");
+      }
+    }
+
     const message = await channel.send({
       embeds: [buildEventEmbed(event)],
       components: buildEventComponents(event.id),
     });
 
-    db.query("UPDATE events SET messageId = ?, channelId = ? WHERE id = ?").run(
+    let threadId: string | null = null;
+    if ("threads" in channel) {
+      try {
+        const thread = await message.startThread({
+          name: event.name.slice(0, 100),
+          autoArchiveDuration: config.events.threadAutoArchiveMinutes as 60 | 1440 | 4320 | 10080,
+        });
+        threadId = thread.id;
+        await thread.send(
+          `RSVP above, and use this thread to chat about **${event.name}**.`,
+        );
+      } catch (err) {
+        logger.error({ err }, "Failed to create event thread on resend");
+      }
+    }
+
+    db.query("UPDATE events SET messageId = ?, channelId = ?, threadId = ? WHERE id = ?").run(
       message.id,
       channel.id,
+      threadId,
       id,
     );
 
