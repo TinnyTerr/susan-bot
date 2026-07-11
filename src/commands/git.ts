@@ -7,7 +7,19 @@ import { config } from "../config";
 import { logToDiscordChannel } from "../discordLogger";
 import { logger } from "../logger";
 import { hasManagerRole } from "../permissions";
-import { applyUpdate, checkForUpdates, scheduleRestart } from "../update";
+import { applyUpdate, checkForUpdates, isUpdateInProgress, scheduleRestart } from "../update";
+
+const MAX_COMMITS_SHOWN = 15;
+
+// Renders commits inside a code block so commit messages can't inject
+// markdown formatting or ping @everyone/@here/roles.
+function formatCommitList(commits: string[]): string {
+  const shown = commits.slice(0, MAX_COMMITS_SHOWN);
+  const lines = shown.map((c) => `- ${c}`).join("\n");
+  const remainder = commits.length - shown.length;
+  const suffix = remainder > 0 ? `\n… and ${remainder} more` : "";
+  return `\`\`\`\n${lines}${suffix}\n\`\`\``;
+}
 
 export const data = new SlashCommandBuilder()
   .setName("git")
@@ -42,7 +54,7 @@ async function handleStatus(interaction: ChatInputCommandInteraction) {
     lines.push(`Remote commit: \`${status.remoteCommit.slice(0, 7)}\``);
     lines.push(
       status.commits.length > 0
-        ? `${status.commits.length} commit(s) behind:\n${status.commits.map((c) => `- ${c}`).join("\n")}`
+        ? `${status.commits.length} commit(s) behind:\n${formatCommitList(status.commits)}`
         : "Up to date with origin.",
     );
   } else {
@@ -53,7 +65,7 @@ async function handleStatus(interaction: ChatInputCommandInteraction) {
     lines.push("Warning: working tree has local changes not tracked by git.");
   }
 
-  await interaction.editReply(lines.join("\n"));
+  await interaction.editReply({ content: lines.join("\n"), allowedMentions: { parse: [] } });
 }
 
 async function handleUpdate(interaction: ChatInputCommandInteraction) {
@@ -67,9 +79,20 @@ async function handleUpdate(interaction: ChatInputCommandInteraction) {
 
   await interaction.deferReply();
 
+  if (isUpdateInProgress()) {
+    await interaction.editReply("An update is already in progress — try again shortly.");
+    return;
+  }
+
   const status = checkForUpdates();
   if (!status) {
     await interaction.editReply("Couldn't read git state — is this running from a git checkout?");
+    return;
+  }
+  if (status.dirty) {
+    await interaction.editReply(
+      "Working tree has uncommitted local changes — refusing to pull. Clean up the checkout first.",
+    );
     return;
   }
   if (status.remoteCommit === status.localCommit) {
@@ -88,10 +111,13 @@ async function handleUpdate(interaction: ChatInputCommandInteraction) {
 
   const result = applyUpdate();
   if (!result.ok) {
-    await interaction.editReply(`Update failed: ${result.message}`);
+    await interaction.editReply({ content: `Update failed: ${result.message}`, allowedMentions: { parse: [] } });
     return;
   }
 
-  await interaction.editReply(`Update applied. Restarting now...\n${result.message}`);
+  await interaction.editReply({
+    content: `Update applied. Restarting now...\n${result.message}\n${formatCommitList(status.commits)}`,
+    allowedMentions: { parse: [] },
+  });
   scheduleRestart();
 }
