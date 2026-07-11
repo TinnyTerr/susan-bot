@@ -92,6 +92,6 @@ async function handleUpdate(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  await interaction.editReply(`Update applied. Restarting now...\n${result.message}`);
+  await interaction.editReply(`Update applied. Restarting now...\n\`\`\`\n${result.message}\n\`\`\``);
   scheduleRestart();
 }
