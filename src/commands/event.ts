@@ -292,16 +292,30 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       return;
     }
 
-    const channel = await interaction.client.channels.fetch(event.channelId);
-    if (!channel || !channel.isTextBased() || !("send" in channel)) {
-      await interaction.reply({
-        content: "That event's channel isn't available.",
-        flags: MessageFlags.Ephemeral,
-      });
-      return;
+    let channel = null;
+    try {
+      const fetched = await interaction.client.channels.fetch(event.channelId);
+      if (fetched && fetched.isTextBased() && "send" in fetched) channel = fetched;
+    } catch {
+      // original channel was likely deleted; fall back below
     }
 
-    if (event.messageId) {
+    let usedFallbackChannel = false;
+    if (!channel) {
+      const current = interaction.channel;
+      if (current && current.isTextBased() && "send" in current) {
+        channel = current;
+        usedFallbackChannel = true;
+      } else {
+        await interaction.reply({
+          content: "That event's channel is gone, and I can't post in this one either.",
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+    }
+
+    if (!usedFallbackChannel && event.messageId) {
       try {
         const oldMessage = await channel.messages.fetch(event.messageId);
         if (oldMessage.pinned) await oldMessage.unpin();
@@ -328,10 +342,16 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       logger.error({ err }, "Failed to pin resent event message");
     }
 
-    db.query("UPDATE events SET messageId = ? WHERE id = ?").run(message.id, id);
+    db.query("UPDATE events SET messageId = ?, channelId = ? WHERE id = ?").run(
+      message.id,
+      channel.id,
+      id,
+    );
 
     await interaction.reply({
-      content: `Resent and pinned event #${id} (${event.name}) in <#${event.channelId}>.`,
+      content: usedFallbackChannel
+        ? `The original channel for event #${id} (${event.name}) is gone, so I reposted and pinned it here in <#${channel.id}> instead.`
+        : `Resent and pinned event #${id} (${event.name}) in <#${channel.id}>.`,
       flags: MessageFlags.Ephemeral,
     });
     return;
