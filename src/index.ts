@@ -16,6 +16,9 @@ import { handleRsvpButton, handleRsvpModalSubmit } from "./interactions/rsvp";
 import { logger } from "./logger";
 import { startReminderLoop } from "./reminders";
 import { syncCommands } from "./registerCommands";
+import { killStaleInstances } from "./singleInstance";
+
+killStaleInstances();
 
 const commands = new Map<
   string,
