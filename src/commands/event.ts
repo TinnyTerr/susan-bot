@@ -336,12 +336,6 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       components: buildEventComponents(event.id),
     });
 
-    try {
-      await message.pin();
-    } catch (err) {
-      logger.error({ err }, "Failed to pin resent event message");
-    }
-
     db.query("UPDATE events SET messageId = ?, channelId = ? WHERE id = ?").run(
       message.id,
       channel.id,
