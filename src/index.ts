@@ -12,6 +12,7 @@ import * as eventCommand from "./commands/event";
 import * as gitCommand from "./commands/git";
 import * as quiplashCommand from "./commands/quiplash";
 import { logToDiscordChannel, setLoggerClient } from "./discordLogger";
+import { handleGitLogButton } from "./interactions/git";
 import { handleRsvpButton, handleRsvpModalSubmit } from "./interactions/rsvp";
 import { logger } from "./logger";
 import { startReminderLoop } from "./reminders";
@@ -65,6 +66,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     if (interaction.isButton() && interaction.customId.startsWith("rsvp:")) {
       await handleRsvpButton(interaction);
+      return;
+    }
+
+    if (interaction.isButton() && interaction.customId.startsWith("gitlog:")) {
+      await handleGitLogButton(interaction);
       return;
     }
 

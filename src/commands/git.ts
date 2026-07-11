@@ -5,21 +5,18 @@ import {
 } from "discord.js";
 import { config } from "../config";
 import { logToDiscordChannel } from "../discordLogger";
+import * as git from "../git";
+import {
+  buildCommitEmbed,
+  buildLogComponents,
+  buildLogEmbed,
+  buildStatusEmbed,
+  formatCommitBlock,
+  GIT_LOG_PAGE_SIZE,
+} from "../gitView";
 import { logger } from "../logger";
 import { hasManagerRole } from "../permissions";
 import { applyUpdate, checkForUpdates, isUpdateInProgress, scheduleRestart } from "../update";
-
-const MAX_COMMITS_SHOWN = 15;
-
-// Renders commits inside a code block so commit messages can't inject
-// markdown formatting or ping @everyone/@here/roles.
-function formatCommitList(commits: string[]): string {
-  const shown = commits.slice(0, MAX_COMMITS_SHOWN);
-  const lines = shown.map((c) => `- ${c}`).join("\n");
-  const remainder = commits.length - shown.length;
-  const suffix = remainder > 0 ? `\n… and ${remainder} more` : "";
-  return `\`\`\`\n${lines}${suffix}\n\`\`\``;
-}
 
 export const data = new SlashCommandBuilder()
   .setName("git")
@@ -29,6 +26,27 @@ export const data = new SlashCommandBuilder()
   )
   .addSubcommand((sub) =>
     sub.setName("update").setDescription("Pull the latest code and restart the bot"),
+  )
+  .addSubcommand((sub) =>
+    sub.setName("log").setDescription("Browse the commit history").addIntegerOption((opt) =>
+      opt.setName("page").setDescription("Page number (1-based)").setMinValue(1),
+    ),
+  )
+  .addSubcommand((sub) =>
+    sub
+      .setName("search")
+      .setDescription("Search commit messages")
+      .addStringOption((opt) =>
+        opt.setName("query").setDescription("Text to search for in commit messages").setRequired(true),
+      ),
+  )
+  .addSubcommand((sub) =>
+    sub
+      .setName("show")
+      .setDescription("View the details of a specific commit")
+      .addStringOption((opt) =>
+        opt.setName("hash").setDescription("Commit hash, full or abbreviated").setRequired(true),
+      ),
   );
 
 export async function execute(interaction: ChatInputCommandInteraction) {
@@ -37,6 +55,12 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     await handleStatus(interaction);
   } else if (sub === "update") {
     await handleUpdate(interaction);
+  } else if (sub === "log") {
+    await handleLog(interaction);
+  } else if (sub === "search") {
+    await handleSearch(interaction);
+  } else if (sub === "show") {
+    await handleShow(interaction);
   }
 }
 
@@ -48,24 +72,7 @@ async function handleStatus(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  const lines = [`Branch: \`${status.branch}\``, `Local commit: \`${status.localCommit.slice(0, 7)}\``];
-
-  if (status.remoteCommit) {
-    lines.push(`Remote commit: \`${status.remoteCommit.slice(0, 7)}\``);
-    lines.push(
-      status.commits.length > 0
-        ? `${status.commits.length} commit(s) behind:\n${formatCommitList(status.commits)}`
-        : "Up to date with origin.",
-    );
-  } else {
-    lines.push("Could not reach the remote to check for updates.");
-  }
-
-  if (status.dirty) {
-    lines.push("Warning: working tree has local changes not tracked by git.");
-  }
-
-  await interaction.editReply({ content: lines.join("\n"), allowedMentions: { parse: [] } });
+  await interaction.editReply({ embeds: [buildStatusEmbed(status)], allowedMentions: { parse: [] } });
 }
 
 async function handleUpdate(interaction: ChatInputCommandInteraction) {
@@ -116,8 +123,51 @@ async function handleUpdate(interaction: ChatInputCommandInteraction) {
   }
 
   await interaction.editReply({
-    content: `Update applied. Restarting now...\n${result.message}\n${formatCommitList(status.commits)}`,
+    content: `Update applied. Restarting now...\n${result.message}\n${formatCommitBlock(status.commits)}`,
     allowedMentions: { parse: [] },
   });
   scheduleRestart();
+}
+
+async function handleLog(interaction: ChatInputCommandInteraction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const requestedPage = (interaction.options.getInteger("page") ?? 1) - 1;
+  const totalCount = git.countCommits();
+  const totalPages = Math.max(1, Math.ceil(totalCount / GIT_LOG_PAGE_SIZE));
+  const page = Math.min(Math.max(requestedPage, 0), totalPages - 1);
+
+  const entries = git.queryLog({ skip: page * GIT_LOG_PAGE_SIZE, limit: GIT_LOG_PAGE_SIZE });
+
+  await interaction.editReply({
+    embeds: [buildLogEmbed({ mode: "log", entries, page, totalPages, totalCount })],
+    components: buildLogComponents("log", page, totalPages),
+  });
+}
+
+async function handleSearch(interaction: ChatInputCommandInteraction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const query = interaction.options.getString("query", true);
+  const totalCount = git.countCommits(query);
+  const totalPages = Math.max(1, Math.ceil(totalCount / GIT_LOG_PAGE_SIZE));
+  const entries = git.queryLog({ grep: query, skip: 0, limit: GIT_LOG_PAGE_SIZE });
+
+  await interaction.editReply({
+    embeds: [buildLogEmbed({ mode: "search", query, entries, page: 0, totalPages, totalCount })],
+    components: buildLogComponents("search", 0, totalPages, query),
+  });
+}
+
+async function handleShow(interaction: ChatInputCommandInteraction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const hash = interaction.options.getString("hash", true).trim();
+  const result = git.showCommit(hash);
+  if (!result.ok) {
+    await interaction.editReply(result.error);
+    return;
+  }
+
+  await interaction.editReply({ embeds: [buildCommitEmbed(result.commit)] });
 }
