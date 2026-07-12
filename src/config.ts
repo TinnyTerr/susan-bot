@@ -92,6 +92,14 @@ export const config = {
     cooldownHours: int("QUIPLASH_COOLDOWN_HOURS", 24),
   },
 
+  sharding: {
+    // Number of shard processes the manager (src/index.ts) spawns and
+    // supervises. 1 is correct for almost every deployment (Discord only
+    // requires more once a bot is in ~2500+ guilds) — this exists so the
+    // supervisor architecture doesn't special-case the single-shard case.
+    count: int("SHARD_COUNT", 1),
+  },
+
   update: {
     // Comma-separated role IDs allowed to run /git update. Empty = anyone.
     managerRoleIds: roleList("UPDATE_MANAGER_ROLE_IDS"),

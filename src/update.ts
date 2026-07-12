@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from "bun";
+import { spawnSync } from "bun";
 import { config } from "./config";
 import { logToDiscordChannel } from "./discordLogger";
 import * as git from "./git";
@@ -105,22 +105,19 @@ export function applyUpdate(): ApplyUpdateResult {
   }
 }
 
-// Respawns the bot as a detached process running the same entry point, then
-// exits this one — works whether we were started via `bun run start`,
-// `bun run dev`, or a process manager, since the replacement is spawned by us
-// rather than relying on something else to notice the exit.
+// Asks the shard manager (src/index.ts, our parent process) to respawn this
+// shard, then exits. The manager stays running throughout — it spawns a
+// fresh shard process once this one exits — so a restart never leaves an
+// orphaned process behind the way self-respawning did.
 export function scheduleRestart(delayMs = 1000) {
-  logger.info({ delayMs }, "Restarting to apply update");
+  logger.info({ delayMs }, "Requesting restart from shard manager");
   setTimeout(() => {
-    const child = spawn({
-      cmd: [process.execPath, ...process.argv.slice(1)],
-      cwd: process.cwd(),
-      env: process.env,
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
-    });
-    child.unref();
+    const send = (process as unknown as { send?: (message: unknown) => void }).send;
+    if (!send) {
+      logger.error("No IPC channel to a shard manager — cannot request a restart.");
+      return;
+    }
+    send({ type: "restart" });
     process.exit(0);
   }, delayMs);
 }

@@ -1,92 +1,109 @@
-import {
-  ChatInputCommandInteraction,
-  Client,
-  Events,
-  GatewayIntentBits,
-  MessageFlags,
-} from "discord.js";
+import path from "node:path";
+import type { Subprocess } from "bun";
 import { config } from "./config";
-import { startAutoUpdateLoop } from "./autoUpdate";
-import * as catCommand from "./commands/cat";
-import * as eventCommand from "./commands/event";
-import * as gitCommand from "./commands/git";
-import * as quiplashCommand from "./commands/quiplash";
-import { logToDiscordChannel, setLoggerClient } from "./discordLogger";
-import { handleGitLogButton } from "./interactions/git";
-import { handleRsvpButton, handleRsvpModalSubmit } from "./interactions/rsvp";
 import { logger } from "./logger";
-import { startReminderLoop } from "./reminders";
-import { syncCommands } from "./registerCommands";
 import { killStaleInstances } from "./singleInstance";
 
+// Shard manager: a long-lived supervisor that spawns each shard (src/bot.ts,
+// which holds the actual Discord client) as its own child process and keeps
+// it alive. This process never respawns itself, so `bun run start`/`dev` and
+// any process manager watching it see one continuously-running process —
+// only the child shard gets replaced on /git update or a crash, instead of
+// the old approach of the whole bot process detaching a replacement and
+// exiting, which could orphan a process once the parent shell/session went
+// away.
 killStaleInstances();
 
-const commands = new Map<
-  string,
-  { execute: (interaction: ChatInputCommandInteraction) => Promise<void> }
->([
-  [catCommand.data.name, catCommand],
-  [eventCommand.data.name, eventCommand],
-  [quiplashCommand.data.name, quiplashCommand],
-  [gitCommand.data.name, gitCommand],
-]);
+const BOT_ENTRY = path.join(import.meta.dir, "bot.ts");
+const SHARD_COUNT = config.sharding.count;
+const CRASH_WINDOW_MS = 60_000;
+const MAX_CRASHES_IN_WINDOW = 5;
+const CRASH_RESPAWN_DELAY_MS = 2000;
+const RESTART_RESPAWN_DELAY_MS = 500;
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+interface ShardState {
+  id: number;
+  proc: Subprocess | null;
+  restarting: boolean;
+  crashTimestamps: number[];
+}
 
-client.once(Events.ClientReady, async (readyClient) => {
-  logger.info({ tag: readyClient.user.tag }, "Logged in");
-  setLoggerClient(readyClient);
+const shards = new Map<number, ShardState>();
 
-  try {
-    await syncCommands();
-    logger.info("Slash commands synced (stale commands removed)");
-  } catch (err) {
-    logger.error({ err }, "Failed to sync slash commands on startup");
+function spawnShard(id: number) {
+  logger.info({ shard: id }, "Spawning shard");
+
+  const proc = Bun.spawn({
+    cmd: [process.execPath, BOT_ENTRY],
+    cwd: process.cwd(),
+    env: { ...process.env, SHARD_ID: String(id), SHARD_COUNT: String(SHARD_COUNT) },
+    stdin: "ignore",
+    stdout: "inherit",
+    stderr: "inherit",
+    ipc(message) {
+      handleShardMessage(id, message);
+    },
+    onExit(_subprocess, exitCode, signalCode) {
+      handleShardExit(id, exitCode, signalCode);
+    },
+  });
+
+  const state = shards.get(id);
+  if (state) {
+    state.proc = proc;
+    state.restarting = false;
+  } else {
+    shards.set(id, { id, proc, restarting: false, crashTimestamps: [] });
+  }
+}
+
+function handleShardMessage(id: number, message: unknown) {
+  if (message && typeof message === "object" && (message as { type?: unknown }).type === "restart") {
+    const state = shards.get(id);
+    if (state) state.restarting = true;
+    logger.info({ shard: id }, "Shard requested a restart");
+  }
+}
+
+function handleShardExit(id: number, exitCode: number | null, signalCode: number | null) {
+  const state = shards.get(id);
+  const restarting = state?.restarting ?? false;
+
+  logger.warn({ shard: id, exitCode, signalCode, restarting }, "Shard process exited");
+
+  if (!restarting) {
+    const now = Date.now();
+    const crashes = (state?.crashTimestamps ?? []).filter((t) => now - t < CRASH_WINDOW_MS);
+    crashes.push(now);
+    if (state) state.crashTimestamps = crashes;
+    if (crashes.length > MAX_CRASHES_IN_WINDOW) {
+      logger.fatal(
+        { shard: id },
+        "Shard crashed too many times in a short window — giving up on respawning it",
+      );
+      return;
+    }
   }
 
-  startReminderLoop(readyClient);
-  startAutoUpdateLoop(readyClient);
-});
+  setTimeout(
+    () => spawnShard(id),
+    restarting ? RESTART_RESPAWN_DELAY_MS : CRASH_RESPAWN_DELAY_MS,
+  );
+}
 
-client.on(Events.InteractionCreate, async (interaction) => {
-  try {
-    if (interaction.isChatInputCommand()) {
-      const command = commands.get(interaction.commandName);
-      if (!command) return;
-      await command.execute(interaction);
-      return;
-    }
-
-    if (interaction.isAutocomplete()) {
-      if (interaction.commandName === catCommand.data.name) {
-        await catCommand.autocomplete(interaction);
-      }
-      return;
-    }
-
-    if (interaction.isButton() && interaction.customId.startsWith("rsvp:")) {
-      await handleRsvpButton(interaction);
-      return;
-    }
-
-    if (interaction.isButton() && interaction.customId.startsWith("gitlog:")) {
-      await handleGitLogButton(interaction);
-      return;
-    }
-
-    if (interaction.isModalSubmit() && interaction.customId.startsWith("rsvp-modal:")) {
-      await handleRsvpModalSubmit(interaction);
-      return;
-    }
-  } catch (err) {
-    logger.error({ err, interactionId: interaction.id }, "Error handling interaction");
-    await logToDiscordChannel("error", `Error handling an interaction: ${String(err)}`);
-    if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
-      await interaction
-        .reply({ content: "Something went wrong handling that.", flags: MessageFlags.Ephemeral })
-        .catch(() => {});
-    }
+function shutdown() {
+  logger.info("Shard manager shutting down");
+  for (const state of shards.values()) {
+    state.proc?.kill();
   }
-});
+  process.exit(0);
+}
 
-client.login(config.discordToken);
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
+
+logger.info({ shardCount: SHARD_COUNT }, "Shard manager starting");
+for (let id = 0; id < SHARD_COUNT; id++) {
+  shards.set(id, { id, proc: null, restarting: false, crashTimestamps: [] });
+  spawnShard(id);
+}

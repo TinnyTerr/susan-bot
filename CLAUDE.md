@@ -38,19 +38,27 @@ On startup, the bot syncs slash commands — any stale commands from older versi
 
 ## High-Level Architecture
 
-**Entry Point (`src/index.ts`)**
-- Initializes Discord client with guild intents
+**Shard Manager + Shard split (`src/index.ts`, `src/bot.ts`)**
+
+`bun run dev`/`bun run start` run `src/index.ts`, which is a supervisor, not the Discord client. It spawns one child process per shard from `src/bot.ts` (count from `SHARD_COUNT`, default 1) via `Bun.spawn` with IPC enabled, and keeps them alive:
+- On a clean exit requested by the shard itself (`process.send({ type: "restart" })`, used by `/git update` and auto-update — see `scheduleRestart()` in `src/update.ts`), the manager spawns a fresh shard process immediately.
+- On an unexpected crash, the manager respawns after a short delay, with a crash-loop guard (gives up after 5 crashes within 60s).
+- The manager itself is never replaced or restarted — this is why updates no longer leave an orphaned background process: only the shard child is killed and respawned, the supervisor watching it stays up the whole time.
+
+**Shard (`src/bot.ts`)**
+- Initializes the Discord client for its shard (`SHARD_ID`/`SHARD_COUNT` env vars set by the manager) with guild intents
 - Routes interactions: slash commands → `commands/` map, buttons/modals → `interactions/rsvp.ts`
 - Starts reminder loop and auto-update loop on ready; hands the ready client to `discordLogger.ts` so update/error logs can be posted to Discord
+- On `SIGTERM` (sent by the manager on shutdown or restart), destroys the client and exits cleanly
 
 **Command System**
-- `src/commands/event.ts`, `src/commands/quiplash.ts`, `src/commands/cat.ts`, and `src/commands/git.ts` export `data` (SlashCommandBuilder) and `execute(interaction)`; `cat.ts` also exports `autocomplete(interaction)` for cat-name suggestions (routed in `index.ts`)
+- `src/commands/event.ts`, `src/commands/quiplash.ts`, `src/commands/cat.ts`, and `src/commands/git.ts` export `data` (SlashCommandBuilder) and `execute(interaction)`; `cat.ts` also exports `autocomplete(interaction)` for cat-name suggestions (routed in `bot.ts`)
 - `src/registerCommands.ts` syncs commands to Discord on startup (fetches live commands, removes stale ones, creates/updates as needed)
 - `src/deploy-commands.ts` does the same sync standalone (useful for debugging or pre-registering before bot starts)
 
 **Git Auto-Update (`src/git.ts`, `src/update.ts`, `src/autoUpdate.ts`, `src/commands/git.ts`)**
 - `git.ts`: thin wrappers around `git` CLI calls (`fetch`, `rev-parse`, `log`, `status --porcelain`, `pull --ff-only`) via `Bun.spawnSync`
-- `update.ts`: `checkForUpdates()` fetches + diffs local vs. `origin/<branch>`; `applyUpdate()` pulls (refuses if the working tree is dirty) and runs `bun install` if `AUTO_UPDATE_INSTALL_DEPS`; `scheduleRestart()` spawns a detached replacement process (`process.execPath` + `process.argv`) and exits — works regardless of how the bot was started (`bun run start`, `bun run dev`, a process manager)
+- `update.ts`: `checkForUpdates()` fetches + diffs local vs. `origin/<branch>`; `applyUpdate()` pulls (refuses if the working tree is dirty) and runs `bun install` if `AUTO_UPDATE_INSTALL_DEPS`; `scheduleRestart()` sends `{ type: "restart" }` over IPC to the shard manager (`src/index.ts`, our parent process) and exits — the manager spawns the replacement, so this works regardless of how the bot was started (`bun run start`, `bun run dev`, a process manager)
 - `autoUpdate.ts`: `startAutoUpdateLoop()` polls on `AUTO_UPDATE_POLL_INTERVAL_MS` when `AUTO_UPDATE_ENABLED=true` and applies+restarts automatically
 - `commands/git.ts`: `/git status` (anyone) and `/git update` (gated by `UPDATE_MANAGER_ROLE_IDS`)
 - Requires the deployment to be a git checkout with an `origin` remote
@@ -89,7 +97,7 @@ On startup, the bot syncs slash commands — any stale commands from older versi
 ## Data Flow
 
 1. User types slash command in Discord
-2. `Events.InteractionCreate` fires in `index.ts`
+2. `Events.InteractionCreate` fires in `bot.ts`
 3. Command name looked up in `commands` map, `execute()` called
 4. Command reads/writes `db` (events, rsvps, prompts tables)
 5. Command builds Discord embed/components via `eventView.ts` and responds to interaction
