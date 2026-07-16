@@ -9,16 +9,6 @@ export function optional(name: string, fallback: string): string {
   return value === undefined || value === "" ? fallback : value;
 }
 
-export function intList(name: string, fallback: number[]): number[] {
-  const raw = process.env[name];
-  if (!raw) return fallback;
-  return raw
-    .split(",")
-    .map((s) => Number.parseInt(s.trim(), 10))
-    .filter((n) => Number.isFinite(n) && n >= 0)
-    .sort((a, b) => b - a);
-}
-
 export function roleList(name: string): string[] {
   const raw = process.env[name];
   if (!raw) return [];
@@ -54,8 +44,6 @@ export const config = {
 
   events: {
     defaultChannelId: optional("DEFAULT_EVENT_CHANNEL_ID", ""),
-    reminderMinutesBefore: intList("REMINDER_MINUTES_BEFORE", [1440, 60, 15]),
-    reminderPollIntervalMs: int("REMINDER_POLL_INTERVAL_MS", 60_000),
     timezone: optional("TIMEZONE", "UTC"),
     locale: optional("LOCALE", "en-US"),
     listMax: int("EVENT_LIST_MAX", 10),
@@ -67,6 +55,7 @@ export const config = {
       no: optional("RSVP_EMOJI_NO", ""),
     },
     cleanupHours: int("EVENT_CLEANUP_HOURS", 24),
+    cleanupPollIntervalMs: int("EVENT_CLEANUP_POLL_INTERVAL_MS", 60_000),
     advancedRsvpEnabled: bool("EVENT_ADVANCED_RSVP_ENABLED", true),
     // Minutes of inactivity before Discord auto-archives an event's thread.
     // Must be one of 60, 1440, 4320, 10080.

@@ -1,6 +1,6 @@
 # Hangout Bot
 
-A Discord bot (Bun + TypeScript) for scheduling hangouts/events with RSVPs and reminders,
+A Discord bot (Bun + TypeScript) for scheduling hangouts/events with RSVPs,
 plus a Quiplash-style prompt manager for party games and a `/cat` command that posts
 photos and videos of our cats. Built in memory of Susan. Storage is a local SQLite file
 (via `bun:sqlite`) — no external database required.
@@ -29,8 +29,6 @@ photos and videos of our cats. Built in memory of Susan. Storage is a local SQLi
 Every behavioral knob lives in `.env` (see `.env.example` for the full list with
 descriptions) and is centralized in `src/config.ts`. Highlights:
 
-- **Reminders**: `REMINDER_MINUTES_BEFORE` (multiple comma-separated lead times, e.g.
-  `1440,60,15`), `REMINDER_POLL_INTERVAL_MS`.
 - **Display**: `TIMEZONE`, `LOCALE`, `EVENT_LIST_MAX`.
 - **Permissions**: `EVENT_MANAGER_ROLE_IDS` / `QUIPLASH_MANAGER_ROLE_IDS` restrict who can
   create/cancel events or add/remove prompts (empty = anyone).

@@ -102,6 +102,22 @@ export function countCommits(grep?: string): number {
   return res.ok && Number.isFinite(n) ? n : 0;
 }
 
+// Alphanumeric plus common ref characters; deliberately excludes a leading
+// "-" so the value can never be interpreted as a git flag.
+const REF_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_\-./^~]{0,99}$/;
+
+// Full recursive list of tracked file paths at a ref, for rendering a
+// directory tree. Verifies the ref resolves to a real tree before passing it
+// to ls-tree, since it comes straight from user input.
+export function getFileTree(ref: string): string[] | null {
+  if (!REF_PATTERN.test(ref)) return null;
+  const verify = run(["rev-parse", "--verify", "--quiet", `${ref}^{tree}`]);
+  if (!verify.ok) return null;
+  const res = run(["ls-tree", "-r", "--name-only", ref]);
+  if (!res.ok) return null;
+  return res.stdout ? res.stdout.split("\n").filter(Boolean) : [];
+}
+
 const HASH_PATTERN = /^[0-9a-fA-F]{4,40}$/;
 
 export interface CommitDetail extends CommitEntry {

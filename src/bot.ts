@@ -7,6 +7,7 @@ import {
 } from "discord.js";
 import { config } from "./config";
 import { startAutoUpdateLoop } from "./autoUpdate";
+import { startCleanupLoop } from "./cleanup";
 import * as catCommand from "./commands/cat";
 import * as eventCommand from "./commands/event";
 import * as gitCommand from "./commands/git";
@@ -15,7 +16,6 @@ import { logToDiscordChannel, setLoggerClient } from "./discordLogger";
 import { handleGitLogButton } from "./interactions/git";
 import { handleRsvpButton, handleRsvpModalSubmit } from "./interactions/rsvp";
 import { logger } from "./logger";
-import { startReminderLoop } from "./reminders";
 import { syncCommands } from "./registerCommands";
 
 // This process is a single shard, spawned and supervised by the shard
@@ -52,7 +52,7 @@ client.once(Events.ClientReady, async (readyClient) => {
     logger.error({ err }, "Failed to sync slash commands on startup");
   }
 
-  startReminderLoop(readyClient);
+  startCleanupLoop();
   startAutoUpdateLoop(readyClient);
 });
 

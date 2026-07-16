@@ -31,13 +31,7 @@ try {
 }
 
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS event_reminders_sent (
-    eventId INTEGER NOT NULL,
-    minutesBefore INTEGER NOT NULL,
-    PRIMARY KEY (eventId, minutesBefore)
-  );
-`);
+db.exec(`DROP TABLE IF EXISTS event_reminders_sent;`);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS rsvps (

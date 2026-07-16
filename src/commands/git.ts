@@ -11,6 +11,7 @@ import {
   buildLogComponents,
   buildLogEmbed,
   buildStatusEmbed,
+  buildTreeEmbed,
   formatCommitBlock,
   GIT_LOG_PAGE_SIZE,
 } from "../gitView";
@@ -47,6 +48,14 @@ export const data = new SlashCommandBuilder()
       .addStringOption((opt) =>
         opt.setName("hash").setDescription("Commit hash, full or abbreviated").setRequired(true),
       ),
+  )
+  .addSubcommand((sub) =>
+    sub
+      .setName("tree")
+      .setDescription("Browse the repo's file/directory structure")
+      .addStringOption((opt) =>
+        opt.setName("ref").setDescription("Branch, tag, or commit (defaults to HEAD)"),
+      ),
   );
 
 export async function execute(interaction: ChatInputCommandInteraction) {
@@ -61,6 +70,8 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     await handleSearch(interaction);
   } else if (sub === "show") {
     await handleShow(interaction);
+  } else if (sub === "tree") {
+    await handleTree(interaction);
   }
 }
 
@@ -170,4 +181,17 @@ async function handleShow(interaction: ChatInputCommandInteraction) {
   }
 
   await interaction.editReply({ embeds: [buildCommitEmbed(result.commit)] });
+}
+
+async function handleTree(interaction: ChatInputCommandInteraction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const ref = interaction.options.getString("ref")?.trim() || "HEAD";
+  const entries = git.getFileTree(ref);
+  if (entries === null) {
+    await interaction.editReply("Couldn't resolve that ref — check the branch, tag, or commit name.");
+    return;
+  }
+
+  await interaction.editReply({ embeds: [buildTreeEmbed(ref, entries)] });
 }

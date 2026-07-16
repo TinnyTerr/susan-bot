@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { bool, int, intList, optional, required, roleList } from "../src/config";
+import { bool, int, optional, required, roleList } from "../src/config";
 
 describe("required", () => {
   test("returns the value when set", () => {
@@ -28,19 +28,6 @@ describe("optional", () => {
     process.env.TEST_OPTIONAL = "custom";
     expect(optional("TEST_OPTIONAL", "fallback")).toBe("custom");
     delete process.env.TEST_OPTIONAL;
-  });
-});
-
-describe("intList", () => {
-  test("falls back when unset", () => {
-    delete process.env.TEST_INT_LIST;
-    expect(intList("TEST_INT_LIST", [1, 2])).toEqual([1, 2]);
-  });
-
-  test("parses, filters invalid/negative entries, and sorts descending", () => {
-    process.env.TEST_INT_LIST = "15, -5, abc, 60, 1440";
-    expect(intList("TEST_INT_LIST", [])).toEqual([1440, 60, 15]);
-    delete process.env.TEST_INT_LIST;
   });
 });
 

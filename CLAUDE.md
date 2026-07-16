@@ -12,7 +12,7 @@ Four main commands:
 - **`/event`**: create/list/info/cancel events with two-tier RSVP system (basic Go/Maybe/No, or advanced with arrival/departure times and notes); `resend` (event managers only) reposts an event's embed as a new pinned message, strips buttons from and unpins the old one (so only the new message is live), useful when the pinned embed gets buried or lost
 - **`/quiplash`**: add/import/list/remove game prompts by category, draw random prompts with repeat-avoidance via cooldown tracking; `latest` (quiplash managers only) posts/refreshes a pinned "latest prompts" board that's automatically re-edited whenever prompts are added, imported, or removed — see `quiplashView.ts`
 - **`/cat`**: posts a random photo/video from a per-cat media folder (`CAT_MEDIA_DIR/<name>/`); defaults to `CAT_DEFAULT_NAME` (susan), `name:any` picks a random cat. No database — reads the filesystem on each call.
-- **`/git`**: `status` shows the current commit and whether origin has new commits; `update` (role-gated) pulls, reinstalls deps, and restarts the bot process (guarded against overlapping runs — see "Auto-update" below); `log`/`search`/`show` browse the commit history — paginated embeds with Prev/Next buttons (`gitlog:<mode>:<page>:<query>` custom IDs, handled in `interactions/git.ts`), `search` filters by commit message, `show <hash>` displays a single commit's message and changed files. All read-only subcommands reply ephemerally, and commit text is always rendered inside code blocks / with `allowedMentions: { parse: [] }` since commit messages are attacker-influenceable free text. See `gitView.ts` for embed building.
+- **`/git`**: `status` shows the current commit and whether origin has new commits; `update` (role-gated) pulls, reinstalls deps, and restarts the bot process (guarded against overlapping runs — see "Auto-update" below); `log`/`search`/`show` browse the commit history — paginated embeds with Prev/Next buttons (`gitlog:<mode>:<page>:<query>` custom IDs, handled in `interactions/git.ts`), `search` filters by commit message, `show <hash>` displays a single commit's message and changed files; `tree` renders the repo's file/directory structure at a given ref (defaults to `HEAD`) as an indented tree, via `git.getFileTree()` — the ref is validated against a strict pattern and confirmed to resolve with `rev-parse --verify` before being passed to `ls-tree`, since it comes straight from user input. All read-only subcommands reply ephemerally, and commit text is always rendered inside code blocks / with `allowedMentions: { parse: [] }` since commit messages are attacker-influenceable free text. See `gitView.ts` for embed building.
 
 Tone: bot messages are plain text — no decorative emojis. RSVP emoji are opt-in via `RSVP_EMOJI_*` env vars (blank by default).
 
@@ -48,7 +48,7 @@ On startup, the bot syncs slash commands — any stale commands from older versi
 **Shard (`src/bot.ts`)**
 - Initializes the Discord client for its shard (`SHARD_ID`/`SHARD_COUNT` env vars set by the manager) with guild intents
 - Routes interactions: slash commands → `commands/` map, buttons/modals → `interactions/rsvp.ts`
-- Starts reminder loop and auto-update loop on ready; hands the ready client to `discordLogger.ts` so update/error logs can be posted to Discord
+- Starts the DB cleanup loop and auto-update loop on ready; hands the ready client to `discordLogger.ts` so update/error logs can be posted to Discord
 - On `SIGTERM` (sent by the manager on shutdown or restart), destroys the client and exits cleanly
 
 **Command System**
@@ -69,20 +69,17 @@ On startup, the bot syncs slash commands — any stale commands from older versi
 
 **Database Layer (`src/db.ts`)**
 - SQLite database initialized with WAL mode
-- Tables: `events`, `event_reminders_sent`, `rsvps`, `prompts`, `prompt_usage`
+- Tables: `events`, `rsvps`, `prompts`, `prompt_usage`
 - Exports TypeScript interfaces for all row types (EventRow, RsvpRow, PromptRow)
 - All DB queries use bun:sqlite's query builder with typed generics — avoid raw SQL
 
 **Configuration (`src/config.ts`)**
 - Centralized config object populated from environment variables (see `.env.example`)
-- All behavioral knobs live here: reminder timings, display settings, role-based permissions, RSVP emoji, cleanup intervals, Quiplash repeat-avoidance
-- Parsing helpers: `required()`, `optional()`, `int()`, `intList()`, `roleList()`, `bool()`
+- All behavioral knobs live here: display settings, role-based permissions, RSVP emoji, cleanup intervals, Quiplash repeat-avoidance
+- Parsing helpers: `required()`, `optional()`, `int()`, `roleList()`, `bool()`
 
-**Reminders (`src/reminders.ts`)**
-- Polls for events approaching within configured lead times (e.g., 1440 min / 60 min / 15 min before)
-- Tracks sent reminders per event per lead time in `event_reminders_sent` table to avoid duplicates
-- Mentions all attendees with "yes" or "maybe" RSVP
-- Posts into the event's thread when one exists (falls back to the channel otherwise)
+**Cleanup (`src/cleanup.ts`)**
+- `startCleanupLoop()` polls on `EVENT_CLEANUP_POLL_INTERVAL_MS` and deletes events (and their rsvps) whose `startTime` is older than `EVENT_CLEANUP_HOURS`; disabled when `EVENT_CLEANUP_HOURS` is 0
 
 **Interactions (`src/interactions/rsvp.ts`)**
 - Handles RSVP button clicks (yes/maybe/no) — updates `rsvps` table, edits embed to show counts
@@ -104,7 +101,7 @@ On startup, the bot syncs slash commands — any stale commands from older versi
 6. For events: message posted to channel, `messageId` stored in `events` table for later updates; a discussion thread is started on that message and its `threadId` stored too, since the channel is expected to be read-only outside of threads
 7. Button/modal interactions route to `interactions/rsvp.ts`, which edits the message in place
 
-Reminder loop runs independently: every `REMINDER_POLL_INTERVAL_MS`, scans for events due within upcoming windows, sends channel messages.
+Cleanup loop runs independently: every `EVENT_CLEANUP_POLL_INTERVAL_MS`, deletes events (and rsvps) older than `EVENT_CLEANUP_HOURS`.
 
 ## Configuration & Environment Variables
 
@@ -112,7 +109,7 @@ All knobs in `.env` (see `.env.example`):
 - **Discord**: `DISCORD_TOKEN`, `CLIENT_ID`, `GUILD_ID` (optional, for fast propagation)
 - **Database**: `DATABASE_PATH` (defaults to `./data/bot.sqlite`)
 - **Admin**: `ADMIN_USER_IDS` (comma-separated Discord user IDs) bypass every manager-role check bot-wide (events, quiplash, `/git update`)
-- **Events**: reminder timings, timezone, locale, RSVP emoji, role-based permissions, cleanup interval, advanced RSVP toggle
+- **Events**: timezone, locale, RSVP emoji, role-based permissions, cleanup interval, advanced RSVP toggle
 - **Quiplash**: default category, random draw limits, manager roles, repeat-avoidance cooldown
 - **Cats**: `CAT_MEDIA_DIR`, `CAT_DEFAULT_NAME`, `CAT_MAX_UPLOAD_BYTES`
 - **Auto-update**: `UPDATE_MANAGER_ROLE_IDS`, `AUTO_UPDATE_ENABLED`, `AUTO_UPDATE_POLL_INTERVAL_MS`, `AUTO_UPDATE_INSTALL_DEPS`
@@ -136,7 +133,6 @@ db.query<RsvpRow, [number]>("SELECT * FROM rsvps WHERE eventId = ?").all(eventId
 ## Database Schema
 
 - **events**: id, guildId, channelId, messageId, threadId, name, description, startTime, creatorId, createdAt, cancelled
-- **event_reminders_sent**: eventId, minutesBefore (tracks which reminders have fired to avoid duplicates)
 - **rsvps**: eventId, userId, status (yes/maybe/no), arrival, departure, note, updatedAt
 - **prompts**: id, guildId, category, text, addedBy, createdAt
 - **prompt_usage**: promptId, usedAt (tracks when each prompt was drawn for cooldown logic)

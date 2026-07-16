@@ -114,6 +114,53 @@ function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
+interface TreeNode {
+  children: Map<string, TreeNode>;
+}
+
+function buildTreeLines(paths: string[]): string {
+  const root: TreeNode = { children: new Map() };
+  for (const path of paths) {
+    let node = root;
+    for (const part of path.split("/")) {
+      let child = node.children.get(part);
+      if (!child) {
+        child = { children: new Map() };
+        node.children.set(part, child);
+      }
+      node = child;
+    }
+  }
+
+  const lines: string[] = [];
+  const render = (node: TreeNode, prefix: string) => {
+    const entries = [...node.children.entries()].sort(([a], [b]) => a.localeCompare(b));
+    entries.forEach(([name, child], i) => {
+      const isLast = i === entries.length - 1;
+      const isDir = child.children.size > 0;
+      lines.push(`${prefix}${isLast ? "└── " : "├── "}${name}${isDir ? "/" : ""}`);
+      render(child, prefix + (isLast ? "    " : "│   "));
+    });
+  };
+  render(root, "");
+  return lines.join("\n");
+}
+
+const MAX_TREE_LEN = 3800;
+
+export function buildTreeEmbed(ref: string, paths: string[]): EmbedBuilder {
+  const tree = buildTreeLines(paths);
+  const truncated = tree.length > MAX_TREE_LEN;
+  const body = truncated ? `${tree.slice(0, MAX_TREE_LEN)}\n…` : tree;
+
+  return new EmbedBuilder()
+    .setTitle("Repo tree")
+    .setColor(COLOR_NEUTRAL)
+    .addFields({ name: "Ref", value: `\`${ref}\``, inline: true })
+    .setDescription(paths.length > 0 ? `\`\`\`\n${body}\n\`\`\`` : "No files found.")
+    .setFooter({ text: `${paths.length} file(s)${truncated ? " • truncated" : ""}` });
+}
+
 export function buildCommitEmbed(commit: CommitDetail): EmbedBuilder {
   const embed = new EmbedBuilder()
     .setTitle(commit.subject || "(no subject)")
