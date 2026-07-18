@@ -11,10 +11,6 @@ export function initSentry() {
     dsn: config.sentry.dsn,
     enableLogs: true,
     tracesSampleRate: 1.0,
-    // Auto-instruments pino (src/logger.ts) via diagnostics_channel, so every
-    // pino log call is also sent to Sentry as a structured log — no changes
-    // needed in logger.ts itself.
-    integrations: [Sentry.pinoIntegration()],
   });
 }
 
