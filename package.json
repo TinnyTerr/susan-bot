@@ -10,7 +10,6 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@sentry/bun": "^10.66.0",
     "chrono-node": "^2.7.7",
     "discord.js": "^14.16.3",
     "pino": "^10.3.1",

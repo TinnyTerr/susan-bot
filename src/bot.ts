@@ -17,9 +17,6 @@ import { handleGitLogButton } from "./interactions/git";
 import { handleRsvpButton, handleRsvpModalSubmit } from "./interactions/rsvp";
 import { logger } from "./logger";
 import { syncCommands } from "./registerCommands";
-import { initSentry, Sentry } from "./sentry";
-
-initSentry();
 
 // This process is a single shard, spawned and supervised by the shard
 // manager (src/index.ts). SHARD_ID/SHARD_COUNT are set by the manager even
@@ -91,7 +88,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
   } catch (err) {
     logger.error({ err, interactionId: interaction.id }, "Error handling interaction");
-    Sentry.captureException(err);
     await logToDiscordChannel("error", `Error handling an interaction: ${String(err)}`);
     if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
       await interaction
