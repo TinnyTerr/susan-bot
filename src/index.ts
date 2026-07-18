@@ -3,9 +3,6 @@ import type { Subprocess } from "bun";
 import { config } from "./config";
 import { logger } from "./logger";
 import { killStaleInstances } from "./singleInstance";
-import { initSentry } from "./sentry";
-
-initSentry();
 
 // Shard manager: a long-lived supervisor that spawns each shard (src/bot.ts,
 // which holds the actual Discord client) as its own child process and keeps

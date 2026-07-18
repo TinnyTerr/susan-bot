@@ -110,14 +110,6 @@ export const config = {
     // Leave blank to only log to the console.
     discordChannelId: optional("LOG_CHANNEL_ID", ""),
   },
-
-  sentry: {
-    // Sentry DSN for error/log reporting. Leave blank to disable.
-    dsn: optional(
-      "SENTRY_DSN",
-      "https://30136e228b6bb952d63fc40429cab8f0@o4510517342830592.ingest.de.sentry.io/4511756175016016",
-    ),
-  },
 };
 
 export type Config = typeof config;
