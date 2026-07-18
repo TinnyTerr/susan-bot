@@ -7,7 +7,11 @@ import { config } from "../config";
 import { db, type PromptRow, type QuiplashBoardRow } from "../db";
 import { logger } from "../logger";
 import { hasManagerRole } from "../permissions";
-import { buildLatestPromptsEmbed, refreshQuiplashBoards } from "../quiplashView";
+import {
+  buildLatestPromptsEmbed,
+  buildQuiplashBoardComponents,
+  refreshQuiplashBoards,
+} from "../quiplashView";
 
 export const data = new SlashCommandBuilder()
   .setName("quiplash")
@@ -306,7 +310,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
         const channel = await interaction.client.channels.fetch(existing.channelId);
         if (channel && channel.isTextBased() && "messages" in channel) {
           const message = await channel.messages.fetch(existing.messageId);
-          await message.edit({ embeds: [embed] });
+          await message.edit({ embeds: [embed], components: buildQuiplashBoardComponents() });
           if (!message.pinned) await message.pin();
           await interaction.reply({
             content: `Refreshed the latest-prompts board in <#${existing.channelId}>.`,
@@ -328,7 +332,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       return;
     }
 
-    const message = await channel.send({ embeds: [embed] });
+    const message = await channel.send({ embeds: [embed], components: buildQuiplashBoardComponents() });
     try {
       await message.pin();
     } catch (err) {

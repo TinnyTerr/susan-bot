@@ -14,6 +14,7 @@ import * as gitCommand from "./commands/git";
 import * as quiplashCommand from "./commands/quiplash";
 import { logToDiscordChannel, setLoggerClient } from "./discordLogger";
 import { handleGitLogButton } from "./interactions/git";
+import { handleQuiplashButton, handleQuiplashModalSubmit } from "./interactions/quiplash";
 import { handleRsvpButton, handleRsvpModalSubmit } from "./interactions/rsvp";
 import { logger } from "./logger";
 import { syncCommands } from "./registerCommands";
@@ -85,8 +86,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
+    if (interaction.isButton() && interaction.customId.startsWith("quiplash:")) {
+      await handleQuiplashButton(interaction);
+      return;
+    }
+
     if (interaction.isModalSubmit() && interaction.customId.startsWith("rsvp-modal:")) {
       await handleRsvpModalSubmit(interaction);
+      return;
+    }
+
+    if (interaction.isModalSubmit() && interaction.customId === "quiplash-add-modal") {
+      await handleQuiplashModalSubmit(interaction);
       return;
     }
   } catch (err) {

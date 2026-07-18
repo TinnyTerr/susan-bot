@@ -1,6 +1,28 @@
-import { Client, EmbedBuilder } from "discord.js";
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  Client,
+  EmbedBuilder,
+} from "discord.js";
 import { config } from "./config";
 import { db, type PromptRow, type QuiplashBoardRow } from "./db";
+
+const LEADERBOARD_SIZE = 5;
+
+// Top contributors by total prompts added, across every category — this is
+// deliberately unfiltered even on a per-category board, since the ask is
+// "who's added the most prompts overall."
+function buildLeaderboardText(guildId: string): string {
+  const rows = db
+    .query<{ addedBy: string; count: number }, [string, number]>(
+      "SELECT addedBy, COUNT(*) as count FROM prompts WHERE guildId = ? GROUP BY addedBy ORDER BY count DESC LIMIT ?",
+    )
+    .all(guildId, LEADERBOARD_SIZE);
+
+  if (rows.length === 0) return "No prompts yet.";
+  return rows.map((r, i) => `${i + 1}. <@${r.addedBy}> — ${r.count} prompt(s)`).join("\n");
+}
 
 export function buildLatestPromptsEmbed(guildId: string, category: string | null): EmbedBuilder {
   const count = config.quiplash.latestDefaultCount;
@@ -29,7 +51,17 @@ export function buildLatestPromptsEmbed(guildId: string, category: string | null
           .slice(0, 4000),
   );
 
+  embed.addFields({ name: "Top Contributors", value: buildLeaderboardText(guildId) });
+
   return embed;
+}
+
+export function buildQuiplashBoardComponents(): ActionRowBuilder<ButtonBuilder>[] {
+  const button = new ButtonBuilder()
+    .setCustomId("quiplash:add-modal")
+    .setLabel("Add Prompt")
+    .setStyle(ButtonStyle.Primary);
+  return [new ActionRowBuilder<ButtonBuilder>().addComponents(button)];
 }
 
 // Re-renders every stored "latest prompts" board for a guild whose category
@@ -50,7 +82,10 @@ export async function refreshQuiplashBoards(
       const channel = await client.channels.fetch(board.channelId);
       if (!channel || !channel.isTextBased() || !("messages" in channel)) continue;
       const message = await channel.messages.fetch(board.messageId);
-      await message.edit({ embeds: [buildLatestPromptsEmbed(guildId, board.category)] });
+      await message.edit({
+        embeds: [buildLatestPromptsEmbed(guildId, board.category)],
+        components: buildQuiplashBoardComponents(),
+      });
     } catch {
       // board message/channel no longer exists; leave the row, a fresh
       // /quiplash latest call will recreate it

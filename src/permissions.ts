@@ -1,15 +1,17 @@
-import type { ChatInputCommandInteraction } from "discord.js";
+import type { ButtonInteraction, ChatInputCommandInteraction, ModalSubmitInteraction } from "discord.js";
 import { config } from "./config";
+
+type MemberBearingInteraction = ChatInputCommandInteraction | ButtonInteraction | ModalSubmitInteraction;
 
 // Bot-wide admins, identified by Discord user ID, bypass every manager-role
 // check regardless of command. Configured via ADMIN_USER_IDS.
-export function isAdmin(interaction: ChatInputCommandInteraction): boolean {
+export function isAdmin(interaction: MemberBearingInteraction): boolean {
   const userId = interaction.user?.id;
   return userId !== undefined && config.adminUserIds.includes(userId);
 }
 
 export function hasManagerRole(
-  interaction: ChatInputCommandInteraction,
+  interaction: MemberBearingInteraction,
   roleIds: string[],
 ): boolean {
   if (isAdmin(interaction)) return true;
