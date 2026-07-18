@@ -114,6 +114,7 @@ All knobs in `.env` (see `.env.example`):
 - **Cats**: `CAT_MEDIA_DIR`, `CAT_DEFAULT_NAME`, `CAT_MAX_UPLOAD_BYTES`
 - **Auto-update**: `UPDATE_MANAGER_ROLE_IDS`, `AUTO_UPDATE_ENABLED`, `AUTO_UPDATE_POLL_INTERVAL_MS`, `AUTO_UPDATE_INSTALL_DEPS`
 - **Logging**: `LOG_LEVEL`, `LOG_PRETTY`, `LOG_CHANNEL_ID`
+- **Error reporting**: `SENTRY_DSN` — enables Sentry error/log capture (`src/sentry.ts`, initialized once per process — the shard manager in `index.ts` and each shard in `bot.ts`) when set; no-op otherwise
 - Config object in `src/config.ts` is the single source of truth; it has no defaults beyond fallbacks in the parsing helpers
 
 ## Common Patterns
