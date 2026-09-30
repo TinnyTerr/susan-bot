@@ -1,12 +1,13 @@
 import { config } from "./config";
-import { commandData, syncCommands } from "./registerCommands";
+import { loadCommands, syncCommands } from "./managers/CommandManager";
 
 async function main() {
-  await syncCommands();
+  const commands = await loadCommands();
+  await syncCommands(commands);
   if (config.guildId) {
-    console.log(`Registered ${commandData.length} commands to guild ${config.guildId} (stale ones removed).`);
+    console.log(`Registered ${commands.length} commands to guild ${config.guildId} (stale ones removed).`);
   } else {
-    console.log(`Registered ${commandData.length} commands globally (stale ones removed; may take up to an hour to propagate).`);
+    console.log(`Registered ${commands.length} commands globally (stale ones removed; may take up to an hour to propagate).`);
   }
 }
 

@@ -45,21 +45,25 @@ On startup, the bot syncs slash commands — any stale commands from older versi
 - On an unexpected crash, the manager respawns after a short delay, with a crash-loop guard (gives up after 5 crashes within 60s).
 - The manager itself is never replaced or restarted — this is why updates no longer leave an orphaned background process: only the shard child is killed and respawned, the supervisor watching it stays up the whole time.
 
-**Shard (`src/bot.ts`)**
-- Initializes the Discord client for its shard (`SHARD_ID`/`SHARD_COUNT` env vars set by the manager) with guild intents
-- Routes interactions: slash commands → `commands/` map, buttons/modals → `interactions/rsvp.ts`
-- Starts the DB cleanup loop and auto-update loop on ready; hands the ready client to `discordLogger.ts` so update/error logs can be posted to Discord
-- On `SIGTERM` (sent by the manager on shutdown or restart), destroys the client and exits cleanly
+**Shard (`src/bot.ts`, `src/client.ts`)**
+- `bot.ts` is the shard entry: builds a `Bot`, starts it, and on `SIGTERM` (sent by the manager on shutdown or restart) stops it and exits cleanly
+- `client.ts` `Bot` owns the discord.js `Client` (`SHARD_ID`/`SHARD_COUNT` env vars set by the manager, guild intents) and a `ManagerRegistry`; `start()` registers managers, runs `initAll()`, logs in, and runs `readyAll()` on `clientReady`; `stop()` runs `stopAll()` then destroys the client
+
+**Managers (`src/core/`, `src/managers/`)** — same layout as the `discord-template` repo
+- `core/Manager.ts`: base class (EventEmitter, pino child logger, `init()`/`ready()`/`stop()` hooks); `core/ManagerRegistry.ts`: holds managers by name plus a shared `bus`
+- `CommandManager`: loads `src/commands/*.ts` (default export via `defineCommand()`), syncs them to Discord on ready (stale commands removed; `loadCommands()`/`syncCommands()` are also used by `deploy-commands.ts`), dispatches slash commands and autocomplete
+- `InteractionManager`: loads `src/interactions/*.ts` (default export one or an array of `defineInteraction({ kind, prefix, execute })`) and routes buttons/modals by customId prefix
+- `EventManager`: loads `src/events/*.ts` (`defineEvent()`), binds them to the client and mirrors each onto the bus as `discord:<event>`; `events/interactionCreate.ts` is the single dispatch point and owns interaction error handling
+- `LogManager` (hands the client to `discordLogger.ts`), `CleanupManager` (event cleanup loop), `UpdateManager` (auto-update loop)
+- To add a command/handler/event: drop a file in the matching folder, no registration elsewhere. Command files also keep named `data`/`execute` exports (tests import `execute`)
 
 **Command System**
-- `src/commands/event.ts`, `src/commands/quiplash.ts`, `src/commands/cat.ts`, and `src/commands/git.ts` export `data` (SlashCommandBuilder) and `execute(interaction)`; `cat.ts` also exports `autocomplete(interaction)` for cat-name suggestions (routed in `bot.ts`)
-- `src/registerCommands.ts` syncs commands to Discord on startup (fetches live commands, removes stale ones, creates/updates as needed)
-- `src/deploy-commands.ts` does the same sync standalone (useful for debugging or pre-registering before bot starts)
+- `src/commands/*.ts` default-export a `Command` (`data`, `execute`, optional `autocomplete`); `cat.ts` provides `autocomplete` for cat-name suggestions
 
-**Git Auto-Update (`src/git.ts`, `src/update.ts`, `src/autoUpdate.ts`, `src/commands/git.ts`)**
+**Git Auto-Update (`src/git.ts`, `src/update.ts`, `src/commands/git.ts`)**
 - `git.ts`: thin wrappers around `git` CLI calls (`fetch`, `rev-parse`, `log`, `status --porcelain`, `pull --ff-only`) via `Bun.spawnSync`
 - `update.ts`: `checkForUpdates()` fetches + diffs local vs. `origin/<branch>`; `applyUpdate()` pulls (refuses if the working tree is dirty) and runs `bun install` if `AUTO_UPDATE_INSTALL_DEPS`; `scheduleRestart()` sends `{ type: "restart" }` over IPC to the shard manager (`src/index.ts`, our parent process) and exits — the manager spawns the replacement, so this works regardless of how the bot was started (`bun run start`, `bun run dev`, a process manager)
-- `autoUpdate.ts`: `startAutoUpdateLoop()` polls on `AUTO_UPDATE_POLL_INTERVAL_MS` when `AUTO_UPDATE_ENABLED=true` and applies+restarts automatically
+- `managers/UpdateManager.ts`: polls on `AUTO_UPDATE_POLL_INTERVAL_MS` when `AUTO_UPDATE_ENABLED=true` and applies+restarts automatically
 - `commands/git.ts`: `/git status` (anyone) and `/git update` (gated by `UPDATE_MANAGER_ROLE_IDS`)
 - Requires the deployment to be a git checkout with an `origin` remote
 
@@ -78,8 +82,8 @@ On startup, the bot syncs slash commands — any stale commands from older versi
 - All behavioral knobs live here: display settings, role-based permissions, RSVP emoji, cleanup intervals, Quiplash repeat-avoidance
 - Parsing helpers: `required()`, `optional()`, `int()`, `roleList()`, `bool()`
 
-**Cleanup (`src/cleanup.ts`)**
-- `startCleanupLoop()` polls on `EVENT_CLEANUP_POLL_INTERVAL_MS` and deletes events (and their rsvps) whose `startTime` is older than `EVENT_CLEANUP_HOURS`; disabled when `EVENT_CLEANUP_HOURS` is 0
+**Cleanup (`src/managers/CleanupManager.ts`)**
+- polls on `EVENT_CLEANUP_POLL_INTERVAL_MS` and deletes events (and their rsvps) whose `startTime` is older than `EVENT_CLEANUP_HOURS`; disabled when `EVENT_CLEANUP_HOURS` is 0
 
 **Interactions (`src/interactions/rsvp.ts`)**
 - Handles RSVP button clicks (yes/maybe/no) — updates `rsvps` table, edits embed to show counts

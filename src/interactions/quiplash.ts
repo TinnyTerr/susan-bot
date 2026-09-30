@@ -1,3 +1,4 @@
+import { defineInteraction } from "../utils/defineInteraction";
 import {
   ActionRowBuilder,
   ButtonInteraction,
@@ -85,3 +86,8 @@ export async function handleQuiplashModalSubmit(interaction: ModalSubmitInteract
     flags: MessageFlags.Ephemeral,
   });
 }
+
+export default [
+  defineInteraction({ kind: "button", prefix: "quiplash:", execute: handleQuiplashButton }),
+  defineInteraction({ kind: "modal", prefix: MODAL_ID, execute: handleQuiplashModalSubmit }),
+];

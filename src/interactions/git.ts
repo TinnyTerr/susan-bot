@@ -1,3 +1,4 @@
+import { defineInteraction } from "../utils/defineInteraction";
 import type { ButtonInteraction } from "discord.js";
 import * as git from "../git";
 import { buildLogComponents, buildLogEmbed, GIT_LOG_PAGE_SIZE, type LogMode } from "../gitView";
@@ -25,3 +26,5 @@ export async function handleGitLogButton(interaction: ButtonInteraction) {
     components: buildLogComponents(mode, page, totalPages, query),
   });
 }
+
+export default defineInteraction({ kind: "button", prefix: "gitlog:", execute: handleGitLogButton });

@@ -1,3 +1,4 @@
+import { defineCommand } from "../utils/defineCommand";
 import {
   ChannelType,
   ChatInputCommandInteraction,
@@ -383,3 +384,5 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 }
+
+export default defineCommand({ data, execute });

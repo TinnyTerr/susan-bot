@@ -1,3 +1,4 @@
+import { defineCommand } from "../utils/defineCommand";
 import {
   ChatInputCommandInteraction,
   MessageFlags,
@@ -195,3 +196,5 @@ async function handleTree(interaction: ChatInputCommandInteraction) {
 
   await interaction.editReply({ embeds: [buildTreeEmbed(ref, entries)] });
 }
+
+export default defineCommand({ data, execute });

@@ -1,3 +1,4 @@
+import { defineCommand } from "../utils/defineCommand";
 import {
   AttachmentBuilder,
   AutocompleteInteraction,
@@ -247,3 +248,5 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   }
   await executeShow(interaction);
 }
+
+export default defineCommand({ data, execute, autocomplete });

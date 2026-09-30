@@ -1,3 +1,4 @@
+import { defineCommand } from "../utils/defineCommand";
 import {
   ChatInputCommandInteraction,
   MessageFlags,
@@ -356,3 +357,5 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 }
+
+export default defineCommand({ data, execute });

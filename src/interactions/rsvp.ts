@@ -1,3 +1,4 @@
+import { defineInteraction } from "../utils/defineInteraction";
 import {
   ActionRowBuilder,
   ButtonInteraction,
@@ -141,3 +142,8 @@ export async function handleRsvpModalSubmit(interaction: ModalSubmitInteraction)
     flags: MessageFlags.Ephemeral,
   });
 }
+
+export default [
+  defineInteraction({ kind: "button", prefix: "rsvp:", execute: handleRsvpButton }),
+  defineInteraction({ kind: "modal", prefix: "rsvp-modal:", execute: handleRsvpModalSubmit }),
+];
