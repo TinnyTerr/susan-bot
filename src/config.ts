@@ -81,6 +81,12 @@ export const config = {
     cooldownHours: int("QUIPLASH_COOLDOWN_HOURS", 24),
   },
 
+  media: {
+    // Required for /movie (free key from themoviedb.org). AniList and Deezer
+    // need no key.
+    tmdbApiKey: optional("TMDB_API_KEY", ""),
+  },
+
   sharding: {
     // Number of shard processes the manager (src/index.ts) spawns and
     // supervises. 1 is correct for almost every deployment (Discord only

@@ -14,6 +14,8 @@ Four main commands:
 - **`/cat`**: `show` (default-style usage) posts a random photo/video from a per-cat media folder (`CAT_MEDIA_DIR/<name>/`); defaults to `CAT_DEFAULT_NAME` (susan), `name:any` picks a random cat. Media can be local files or links: `add url:<link> name:<cat>` validates the URL (http(s), direct image/video extension, not a private/loopback host) and checks it's reachable, then appends it to `CAT_MEDIA_DIR/<name>/links.txt` (creating the cat folder if new) — links are posted directly as message content (Discord auto-embeds them) rather than downloaded. No database — reads the filesystem on each call.
 - **`/git`**: `status` shows the current commit and whether origin has new commits; `update` (role-gated) pulls, reinstalls deps, and restarts the bot process (guarded against overlapping runs — see "Auto-update" below); `log`/`search`/`show` browse the commit history — paginated embeds with Prev/Next buttons (`gitlog:<mode>:<page>:<query>` custom IDs, handled in `interactions/git.ts`), `search` filters by commit message, `show <hash>` displays a single commit's message and changed files; `tree` renders the repo's file/directory structure at a given ref (defaults to `HEAD`) as an indented tree, via `git.getFileTree()` — the ref is validated against a strict pattern and confirmed to resolve with `rev-parse --verify` before being passed to `ls-tree`, since it comes straight from user input. All read-only subcommands reply ephemerally, and commit text is always rendered inside code blocks / with `allowedMentions: { parse: [] }` since commit messages are attacker-influenceable free text. See `gitView.ts` for embed building.
 
+- **`/anime`, `/movie`, `/music`**: lookup commands that search AniList (anime/manga, GraphQL, no key), TMDB (movies/TV, needs `TMDB_API_KEY`, replies ephemerally that it's unset otherwise) and Deezer (track/album/artist, no key). Each service in `src/services/` normalises results to `MediaResult` (`services/media.ts`); `mediaView.ts` renders the top hit as an embed with the rest under "Also"; `utils/replyWithLookup.ts` is the shared defer/search/error flow. No database, nothing stored.
+
 Tone: bot messages are plain text — no decorative emojis. RSVP emoji are opt-in via `RSVP_EMOJI_*` env vars (blank by default).
 
 ## Development Commands
@@ -115,6 +117,7 @@ All knobs in `.env` (see `.env.example`):
 - **Admin**: `ADMIN_USER_IDS` (comma-separated Discord user IDs) bypass every manager-role check bot-wide (events, quiplash, `/git update`)
 - **Events**: timezone, locale, RSVP emoji, role-based permissions, cleanup interval, advanced RSVP toggle
 - **Quiplash**: default category, random draw limits, manager roles, repeat-avoidance cooldown
+- **Media**: `TMDB_API_KEY` (only `/movie` needs it)
 - **Cats**: `CAT_MEDIA_DIR`, `CAT_DEFAULT_NAME`, `CAT_MAX_UPLOAD_BYTES`
 - **Auto-update**: `UPDATE_MANAGER_ROLE_IDS`, `AUTO_UPDATE_ENABLED`, `AUTO_UPDATE_POLL_INTERVAL_MS`, `AUTO_UPDATE_INSTALL_DEPS`
 - **Logging**: `LOG_LEVEL`, `LOG_PRETTY`, `LOG_CHANNEL_ID`
