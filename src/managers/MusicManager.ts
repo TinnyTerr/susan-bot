@@ -7,6 +7,7 @@ import {
   createAudioResource,
   demuxProbe,
   entersState,
+  StreamType,
   joinVoiceChannel,
   type AudioPlayer,
   type VoiceConnection,
@@ -160,6 +161,12 @@ export class GuildQueue {
       const input = Readable.fromWeb(proc.stdout as import("node:stream/web").ReadableStream);
       const probed = await demuxProbe(input);
       if (this.destroyed || this.current !== track) return;
+      // Only WebM/Opus and Ogg/Opus pass through untouched; anything else needs ffmpeg.
+      if (probed.type === StreamType.Arbitrary && !this.manager.ffmpeg) {
+        this.manager.logger.warn({ track: trackLabel(track) }, "Skipping non-Opus source: ffmpeg not installed");
+        probed.stream.destroy();
+        throw new Error("source isn't Opus and ffmpeg isn't installed");
+      }
       this.player.play(createAudioResource(probed.stream, { inputType: probed.type }));
       if (this.loop !== "track" || prev !== track) this.say(`Now playing: ${trackLabel(track)}`);
       void stderr.then((t) => t.trim() && this.manager.logger.debug({ stderr: t.trim() }, "yt-dlp"));
@@ -178,9 +185,20 @@ export class GuildQueue {
 
 export class MusicManager extends Manager {
   readonly queues = new Map<string, GuildQueue>();
+  ffmpeg = false;
 
   constructor(client: Client, registry: ManagerRegistry) {
     super("MusicManager", client, registry);
+  }
+
+  override async init(): Promise<void> {
+    this.ffmpeg = Bun.which("ffmpeg") !== null;
+    if (!this.ffmpeg) {
+      this.log.warn("ffmpeg not found: Opus sources still play, non-Opus sources will be skipped");
+    }
+    if (!Bun.which(config.music.ytdlpPath)) {
+      this.log.warn({ path: config.music.ytdlpPath }, "yt-dlp not found: /play will not work");
+    }
   }
 
   get logger() {
