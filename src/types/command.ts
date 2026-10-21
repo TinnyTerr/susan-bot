@@ -5,6 +5,7 @@ import type {
   SlashCommandOptionsOnlyBuilder,
   SlashCommandSubcommandsOnlyBuilder,
 } from "discord.js";
+import type { ManagerRegistry } from "../core/ManagerRegistry";
 
 export type CommandData =
   | SlashCommandBuilder
@@ -13,6 +14,6 @@ export type CommandData =
 
 export interface Command {
   data: CommandData;
-  execute(interaction: ChatInputCommandInteraction): Promise<void> | void;
+  execute(interaction: ChatInputCommandInteraction, registry: ManagerRegistry): Promise<void> | void;
   autocomplete?(interaction: AutocompleteInteraction): Promise<void> | void;
 }

@@ -3,6 +3,7 @@ import { CleanupManager } from "./managers/CleanupManager";
 import { CommandManager } from "./managers/CommandManager";
 import { EventManager } from "./managers/EventManager";
 import { InteractionManager } from "./managers/InteractionManager";
+import { MusicManager } from "./managers/MusicManager";
 import { LogManager } from "./managers/LogManager";
 import { UpdateManager } from "./managers/UpdateManager";
 import { config } from "./config";
@@ -17,7 +18,7 @@ const shardCount = Number(process.env.SHARD_COUNT ?? 1);
 
 export class Bot {
   readonly client = new Client({
-    intents: [GatewayIntentBits.Guilds],
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
     shards: [shardId],
     shardCount,
   });
@@ -31,6 +32,7 @@ export class Bot {
     registry.register(new InteractionManager(client, registry));
     registry.register(new EventManager(client, registry));
     registry.register(new CleanupManager(client, registry));
+    registry.register(new MusicManager(client, registry));
     registry.register(new UpdateManager(client, registry));
 
     await registry.initAll();

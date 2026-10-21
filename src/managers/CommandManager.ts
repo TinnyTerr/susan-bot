@@ -53,7 +53,7 @@ export class CommandManager extends Manager {
   async handleCommand(interaction: ChatInputCommandInteraction): Promise<void> {
     const command = this.commands.get(interaction.commandName);
     if (!command) return;
-    await command.execute(interaction);
+    await command.execute(interaction, this.registry);
   }
 
   async handleAutocomplete(interaction: AutocompleteInteraction): Promise<void> {

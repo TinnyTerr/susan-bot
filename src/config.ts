@@ -87,6 +87,25 @@ export const config = {
     tmdbApiKey: optional("TMDB_API_KEY", ""),
   },
 
+  music: {
+    // yt-dlp does all the actual fetching/streaming. Path or name on PATH.
+    ytdlpPath: optional("YTDLP_PATH", "yt-dlp"),
+    // Netscape cookies.txt for YouTube (age-gated / "confirm you're not a bot").
+    ytdlpCookiesFile: optional("YTDLP_COOKIES_FILE", ""),
+    // Optional: without these Spotify links fall back to scraping the embed page.
+    spotifyClientId: optional("SPOTIFY_CLIENT_ID", ""),
+    spotifyClientSecret: optional("SPOTIFY_CLIENT_SECRET", ""),
+    // Optional: without these Apple links fall back to the public iTunes
+    // lookup API (songs/albums) and page scraping (playlists).
+    appleTeamId: optional("APPLE_MUSIC_TEAM_ID", ""),
+    appleKeyId: optional("APPLE_MUSIC_KEY_ID", ""),
+    applePrivateKeyPath: optional("APPLE_MUSIC_PRIVATE_KEY_PATH", ""),
+    maxQueue: int("MUSIC_MAX_QUEUE", 500),
+    maxPlaylistImport: int("MUSIC_MAX_PLAYLIST_IMPORT", 100),
+    // Leave the voice channel after this long with nothing playing. 0 = never.
+    idleLeaveSeconds: int("MUSIC_IDLE_LEAVE_SECONDS", 120),
+  },
+
   sharding: {
     // Number of shard processes the manager (src/index.ts) spawns and
     // supervises. 1 is correct for almost every deployment (Discord only

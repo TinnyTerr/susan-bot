@@ -16,6 +16,8 @@ Four main commands:
 
 - **`/anime`, `/movie`, `/music`**: lookup commands that search AniList (anime/manga, GraphQL, no key), TMDB (movies/TV, needs `TMDB_API_KEY`, replies ephemerally that it's unset otherwise) and Deezer (track/album/artist, no key). Each service in `src/services/` normalises results to `MediaResult` (`services/media.ts`); `mediaView.ts` renders the top hit as an embed with the rest under "Also"; `utils/replyWithLookup.ts` is the shared defer/search/error flow. No database, nothing stored.
 
+- **`/play`, `/skip`, `/stop`, `/queue`**: voice playback (separate from the `/music` Deezer lookup). `/play` takes YouTube/Spotify/Apple Music links (tracks, albums, playlists), any other URL yt-dlp understands, or search words. `MusicManager` (`managers/MusicManager.ts`) holds one `GuildQueue` per guild (voice connection, `AudioPlayer`, queue, loop mode, idle-leave timer). Resolution is in `services/music/`: `resolve.ts` routes input; `spotify.ts` (client-credentials API, else embed-page scrape) and `apple.ts` (MusicKit JWT API, else iTunes lookup for songs/albums and JSON-LD scrape for playlists) turn links into metadata-only tracks carrying a `search` query; `ytdlp.ts` resolves YouTube/search. At play time each track is streamed via `yt-dlp -o -` (`bestaudio[acodec=opus]`) into `demuxProbe`, so no ffmpeg is needed as long as the source is WebM/Opus. Needs the `GuildVoiceStates` intent and yt-dlp on the host. Commands now receive the `ManagerRegistry` as a second `execute` argument.
+
 Tone: bot messages are plain text — no decorative emojis. RSVP emoji are opt-in via `RSVP_EMOJI_*` env vars (blank by default).
 
 ## Development Commands
@@ -118,6 +120,7 @@ All knobs in `.env` (see `.env.example`):
 - **Events**: timezone, locale, RSVP emoji, role-based permissions, cleanup interval, advanced RSVP toggle
 - **Quiplash**: default category, random draw limits, manager roles, repeat-avoidance cooldown
 - **Media**: `TMDB_API_KEY` (only `/movie` needs it)
+- **Music playback**: `YTDLP_PATH`, `YTDLP_COOKIES_FILE`, `SPOTIFY_CLIENT_ID/SECRET`, `APPLE_MUSIC_TEAM_ID/KEY_ID/PRIVATE_KEY_PATH` (all optional), `MUSIC_MAX_QUEUE`, `MUSIC_MAX_PLAYLIST_IMPORT`, `MUSIC_IDLE_LEAVE_SECONDS`
 - **Cats**: `CAT_MEDIA_DIR`, `CAT_DEFAULT_NAME`, `CAT_MAX_UPLOAD_BYTES`
 - **Auto-update**: `UPDATE_MANAGER_ROLE_IDS`, `AUTO_UPDATE_ENABLED`, `AUTO_UPDATE_POLL_INTERVAL_MS`, `AUTO_UPDATE_INSTALL_DEPS`
 - **Logging**: `LOG_LEVEL`, `LOG_PRETTY`, `LOG_CHANNEL_ID`
