@@ -35,6 +35,17 @@ export const data = new SlashCommandBuilder()
           .setDescription(`Which cat (default: ${config.cats.defaultName || "any"}; use "any" for a random cat)`)
           .setRequired(false)
           .setAutocomplete(true),
+      )
+      .addStringOption((o) =>
+        o
+          .setName("stretch")
+          .setDescription("Stretch or squeeze the photo (local photos only)")
+          .setRequired(false)
+          .addChoices(
+            { name: "wide", value: "wide" },
+            { name: "tall", value: "tall" },
+            { name: "random", value: "random" },
+          ),
       ),
   )
   .addSubcommand((sub) =>
@@ -104,6 +115,43 @@ export function listLinks(catName: string): string[] {
   }
 }
 
+// Formats Bun.Image can both decode and re-encode. GIFs are left out since
+// only the first frame survives, which kills the animation.
+const STRETCHABLE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+const MAX_STRETCH_SIDE = 4096;
+
+export type StretchMode = "wide" | "tall" | "random";
+
+function isStretchable(path: string): boolean {
+  const dot = path.lastIndexOf(".");
+  return dot !== -1 && STRETCHABLE_EXTENSIONS.has(path.slice(dot).toLowerCase());
+}
+
+function randomFactor(): number {
+  // 0.35x–2.5x, biased away from ~1 so it's actually noticeable
+  const f = 1.4 + Math.random() * 1.1;
+  return Math.random() < 0.5 ? f : 1 / f;
+}
+
+export function stretchFactors(mode: StretchMode): [number, number] {
+  if (mode === "wide") return [2.2, 1];
+  if (mode === "tall") return [1, 2.2];
+  return [randomFactor(), randomFactor()];
+}
+
+export async function stretchImage(path: string, mode: StretchMode): Promise<Uint8Array> {
+  const image = new Bun.Image(path);
+  const { width, height } = await image.metadata();
+  const [fx, fy] = stretchFactors(mode);
+  let w = width * fx;
+  let h = height * fy;
+  // Keep the longest side within bounds without undoing the distortion.
+  const scale = Math.min(1, MAX_STRETCH_SIDE / Math.max(w, h));
+  w = Math.max(1, Math.round(w * scale));
+  h = Math.max(1, Math.round(h * scale));
+  return image.resize(w, h, { fit: "fill" }).bytes();
+}
+
 type CatMedia = { kind: "file"; path: string } | { kind: "link"; url: string };
 
 function listAllMedia(catName: string): CatMedia[] {
@@ -155,6 +203,7 @@ export async function autocomplete(interaction: AutocompleteInteraction) {
 
 async function executeShow(interaction: ChatInputCommandInteraction) {
   const requested = interaction.options.getString("name")?.toLowerCase() ?? config.cats.defaultName;
+  const stretch = interaction.options.getString("stretch") as StretchMode | null;
   const cats = listCats();
 
   if (cats.length === 0) {
@@ -178,7 +227,17 @@ async function executeShow(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  const media = listAllMedia(catName);
+  let media = listAllMedia(catName);
+  if (stretch) {
+    media = media.filter((m) => m.kind === "file" && isStretchable(m.path));
+    if (media.length === 0) {
+      await interaction.reply({
+        content: `No local photos of ${catName} to stretch (needs .jpg, .png or .webp files in their folder).`,
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+  }
   if (media.length === 0) {
     await interaction.reply({
       content: `No photos or videos of ${catName} yet. Add some to \`${join(config.cats.mediaDir, catName)}\` or with \`/cat add\`.`,
@@ -197,9 +256,12 @@ async function executeShow(interaction: ChatInputCommandInteraction) {
   // Uploading can take a moment for videos, so acknowledge first.
   await interaction.deferReply();
   try {
-    await interaction.editReply({
-      files: [new AttachmentBuilder(picked.path, { name: basename(picked.path) })],
-    });
+    const file = stretch
+      ? new AttachmentBuilder(Buffer.from(await stretchImage(picked.path, stretch)), {
+          name: basename(picked.path),
+        })
+      : new AttachmentBuilder(picked.path, { name: basename(picked.path) });
+    await interaction.editReply({ files: [file] });
   } catch (err) {
     logger.error({ err, file: picked.path }, "Failed to upload cat media");
     await interaction.editReply({
