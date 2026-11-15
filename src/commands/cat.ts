@@ -46,6 +46,13 @@ export const data = new SlashCommandBuilder()
             { name: "tall", value: "tall" },
             { name: "random", value: "random" },
           ),
+      )
+      .addStringOption((o) =>
+        o
+          .setName("aspect")
+          .setDescription('Force an aspect ratio, e.g. "16:9", "1:1" or "2.5" (local photos only)')
+          .setRequired(false)
+          .setMaxLength(16),
       ),
   )
   .addSubcommand((sub) =>
@@ -121,6 +128,22 @@ const STRETCHABLE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 const MAX_STRETCH_SIDE = 4096;
 
 export type StretchMode = "wide" | "tall" | "random";
+// A preset, or a target width/height ratio.
+export type Warp = StretchMode | { ratio: number };
+
+const MIN_ASPECT = 0.1;
+const MAX_ASPECT = 10;
+
+// Accepts "W:H", "WxH", "W/H" or a plain number. Null if unparseable or silly.
+export function parseAspect(raw: string): number | null {
+  const m = raw.trim().match(/^(\d+(?:\.\d+)?)\s*(?:[:x/]\s*(\d+(?:\.\d+)?))?$/i);
+  if (!m) return null;
+  const w = Number(m[1]);
+  const h = m[2] === undefined ? 1 : Number(m[2]);
+  if (!(w > 0) || !(h > 0)) return null;
+  const ratio = w / h;
+  return ratio >= MIN_ASPECT && ratio <= MAX_ASPECT ? ratio : null;
+}
 
 function isStretchable(path: string): boolean {
   const dot = path.lastIndexOf(".");
@@ -139,12 +162,21 @@ export function stretchFactors(mode: StretchMode): [number, number] {
   return [randomFactor(), randomFactor()];
 }
 
-export async function stretchImage(path: string, mode: StretchMode): Promise<Uint8Array> {
+// Target size for a warp. Aspect ratios keep the pixel area roughly the same
+// so the photo doesn't balloon or shrink, just changes shape.
+export function warpSize(width: number, height: number, warp: Warp): [number, number] {
+  if (typeof warp === "object") {
+    const area = width * height;
+    return [Math.sqrt(area * warp.ratio), Math.sqrt(area / warp.ratio)];
+  }
+  const [fx, fy] = stretchFactors(warp);
+  return [width * fx, height * fy];
+}
+
+export async function stretchImage(path: string, warp: Warp): Promise<Uint8Array> {
   const image = new Bun.Image(path);
   const { width, height } = await image.metadata();
-  const [fx, fy] = stretchFactors(mode);
-  let w = width * fx;
-  let h = height * fy;
+  let [w, h] = warpSize(width, height, warp);
   // Keep the longest side within bounds without undoing the distortion.
   const scale = Math.min(1, MAX_STRETCH_SIDE / Math.max(w, h));
   w = Math.max(1, Math.round(w * scale));
@@ -203,7 +235,28 @@ export async function autocomplete(interaction: AutocompleteInteraction) {
 
 async function executeShow(interaction: ChatInputCommandInteraction) {
   const requested = interaction.options.getString("name")?.toLowerCase() ?? config.cats.defaultName;
-  const stretch = interaction.options.getString("stretch") as StretchMode | null;
+  const stretchOpt = interaction.options.getString("stretch") as StretchMode | null;
+  const aspectOpt = interaction.options.getString("aspect");
+  if (stretchOpt && aspectOpt) {
+    await interaction.reply({
+      content: "Pick either `stretch` or `aspect`, not both.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  let stretch: Warp | null = stretchOpt;
+  if (aspectOpt) {
+    const ratio = parseAspect(aspectOpt);
+    if (ratio === null) {
+      await interaction.reply({
+        content: `Couldn't read "${aspectOpt}" as an aspect ratio. Use something like \`16:9\`, \`1:1\` or \`2.5\` (between ${MIN_ASPECT} and ${MAX_ASPECT}).`,
+        flags: MessageFlags.Ephemeral,
+        allowedMentions: { parse: [] },
+      });
+      return;
+    }
+    stretch = { ratio };
+  }
   const cats = listCats();
 
   if (cats.length === 0) {
