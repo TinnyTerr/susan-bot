@@ -14,7 +14,8 @@ import { killStaleInstances } from "./singleInstance";
 // away.
 killStaleInstances();
 
-const BOT_ENTRY = path.join(import.meta.dir, "bot.ts");
+const ext = import.meta.path.endsWith(".ts") ? "ts" : "js";
+const BOT_ENTRY = path.join(import.meta.dir, `bot.${ext}`);
 const SHARD_COUNT = config.sharding.count;
 const CRASH_WINDOW_MS = 60_000;
 const MAX_CRASHES_IN_WINDOW = 5;
