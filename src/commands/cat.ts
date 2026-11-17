@@ -11,7 +11,7 @@ import { basename, join } from "node:path";
 import { config } from "../config";
 import { logger } from "../logger";
 
-const MEDIA_EXTENSIONS = new Set([
+export const MEDIA_EXTENSIONS = new Set([
   ".jpg",
   ".jpeg",
   ".png",

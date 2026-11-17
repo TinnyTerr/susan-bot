@@ -80,6 +80,21 @@ To add a cat, create a folder named after them under `CAT_MEDIA_DIR` (default
 Supported formats: jpg, jpeg, png, gif, webp, mp4, mov, webm. Files over the upload
 limit are skipped.
 
+#### Upload site
+`bun run web` serves a small page for uploading cat photos/videos straight into
+`CAT_MEDIA_DIR/<cat>/`. Login is OAuth (auth code + PKCE, `profile` scope) against the
+files server (`WEB_OAUTH_BASE`, default `https://files.tinnyterr.com`):
+
+1. On the files server, create an OAuth app with scope `profile` and redirect URI
+   `<WEB_PUBLIC_URL>/callback` (https, or `http://localhost`/`127.0.0.1`).
+2. Set `WEB_OAUTH_CLIENT_ID` (and `WEB_OAUTH_CLIENT_SECRET` for a confidential app),
+   `WEB_PUBLIC_URL`, and optionally `WEB_ALLOWED_USERS` to restrict who can upload.
+3. `bun run web` (listens on `WEB_HOST:WEB_PORT`, default `127.0.0.1:3080`).
+
+Uploads are checked by extension, magic bytes and `CAT_MAX_UPLOAD_BYTES`, stored under a
+generated name (`web-<time>-<user>-<id>.<ext>`), and picked up by `/cat` immediately.
+Sessions are in memory, so restarting the site logs everyone out.
+
 ### `/git`
 - `status` — shows the current commit, whether origin has new commits, and whether the
   working tree has uncommitted local changes. Ephemeral, anyone can run it.

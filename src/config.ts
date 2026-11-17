@@ -135,6 +135,21 @@ export const config = {
     // Leave blank to only log to the console.
     discordChannelId: optional("LOG_CHANNEL_ID", ""),
   },
+
+  // Cat upload site (`bun run web`), logged in via OAuth against the files server.
+  web: {
+    port: int("WEB_PORT", 3080),
+    host: optional("WEB_HOST", "127.0.0.1"),
+    // Public base URL of this site; the OAuth redirect is <publicUrl>/callback.
+    publicUrl: optional("WEB_PUBLIC_URL", "http://localhost:3080").replace(/\/+$/, ""),
+    oauthBase: optional("WEB_OAUTH_BASE", "https://files.tinnyterr.com").replace(/\/+$/, ""),
+    oauthClientId: optional("WEB_OAUTH_CLIENT_ID", ""),
+    // Blank for a public client (PKCE only).
+    oauthClientSecret: optional("WEB_OAUTH_CLIENT_SECRET", ""),
+    // Usernames on the files server allowed to upload. Blank = anyone who can log in.
+    allowedUsers: roleList("WEB_ALLOWED_USERS").map((u) => u.toLowerCase()),
+    sessionHours: int("WEB_SESSION_HOURS", 24 * 7),
+  },
 };
 
 export type Config = typeof config;

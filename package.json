@@ -7,6 +7,7 @@
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
     "deploy-commands": "bun run src/deploy-commands.ts",
+    "web": "bun run src/web/server.ts",
     "test": "bun test"
   },
   "dependencies": {
