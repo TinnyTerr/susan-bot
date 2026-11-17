@@ -81,19 +81,31 @@ Supported formats: jpg, jpeg, png, gif, webp, mp4, mov, webm. Files over the upl
 limit are skipped.
 
 #### Upload site
-`bun run web` serves a small page for uploading cat photos/videos straight into
-`CAT_MEDIA_DIR/<cat>/`. Login is OAuth (auth code + PKCE, `profile` scope) against the
-files server (`WEB_OAUTH_BASE`, default `https://files.tinnyterr.com`):
+`bun run web` serves a page for uploading cat photos/videos. Uploaders log in with
+Discord (`identify` scope, members of `GUILD_ID` only). Files are stored on the files
+server under one account (`CAT_FILES_API_KEY`), and the file's raw link is appended to
+`CAT_MEDIA_DIR/<cat>/links.txt` with the name the uploader gave it and their Discord
+id. `/cat show` then posts it as `<name> from @uploader` (no ping).
 
-1. On the files server, create an OAuth app with scope `profile` and redirect URI
-   `<WEB_PUBLIC_URL>/callback` (https, or `http://localhost`/`127.0.0.1`).
-2. Set `WEB_OAUTH_CLIENT_ID` (and `WEB_OAUTH_CLIENT_SECRET` for a confidential app),
-   `WEB_PUBLIC_URL`, and optionally `WEB_ALLOWED_USERS` to restrict who can upload.
-3. `bun run web` (listens on `WEB_HOST:WEB_PORT`, default `127.0.0.1:3080`).
+Moderation:
+- Uploads from unknown users wait for review. They're posted to `CAT_REVIEW_CHANNEL_ID`
+  with **Approve**, **Approve with rename** (modal to change name and/or cat),
+  **Approve + trust user** and **Deny** buttons. `/cat review` shows the oldest five.
+  Denied files are deleted from the files server.
+- `/cat allow @user`: their uploads skip review. `/cat deny @user`: blocked from the
+  site, and their sessions end. `/cat reset @user`: back to review. `/cat uploaders`
+  lists both.
+- All of the above need `CAT_MANAGER_ROLE_IDS` (blank = `ADMIN_USER_IDS` only).
 
-Uploads are checked by extension, magic bytes and `CAT_MAX_UPLOAD_BYTES`, stored under a
-generated name (`web-<time>-<user>-<id>.<ext>`), and picked up by `/cat` immediately.
-Sessions are in memory, so restarting the site logs everyone out.
+Setup:
+1. Developer portal → this bot's application → OAuth2: add `<WEB_PUBLIC_URL>/callback`
+   as a redirect and copy the client secret into `DISCORD_CLIENT_SECRET`.
+2. Make an API key on the files server for the storage account → `CAT_FILES_API_KEY`.
+3. Set `WEB_PUBLIC_URL`, `CAT_REVIEW_CHANNEL_ID`, `CAT_MANAGER_ROLE_IDS`, then
+   `bun run web` (listens on `WEB_HOST:WEB_PORT`, default `127.0.0.1:3080`).
+
+Sessions are in memory, so restarting the site logs everyone out. `links.txt` lines are
+`url[<TAB>name[<TAB>uploaderId]]`, so old files of bare URLs still work.
 
 ### `/git`
 - `status` — shows the current commit, whether origin has new commits, and whether the

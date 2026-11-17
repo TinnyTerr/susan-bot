@@ -24,3 +24,11 @@ export function hasManagerRole(
   }
   return roleIds.some((id) => memberRoles.cache.has(id));
 }
+
+// Cat upload moderation. Unlike the other manager checks, an empty role list
+// means admins only — an open review queue would let anyone approve anything.
+export function canManageCatUploads(interaction: MemberBearingInteraction): boolean {
+  if (isAdmin(interaction)) return true;
+  if (config.web.managerRoleIds.length === 0) return false;
+  return hasManagerRole(interaction, config.web.managerRoleIds);
+}

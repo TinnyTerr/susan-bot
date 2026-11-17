@@ -3,13 +3,19 @@ import {
   AttachmentBuilder,
   AutocompleteInteraction,
   ChatInputCommandInteraction,
+  escapeMarkdown,
   MessageFlags,
   SlashCommandBuilder,
 } from "discord.js";
-import { appendFileSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { config } from "../config";
 import { logger } from "../logger";
+import { appendLink, type CatLink, listLinks, normaliseCatName } from "../catLinks";
+import { buildReviewMessage, getUploaderStatus, listPending, listUploaders, setUploaderStatus } from "../catUploads";
+import { canManageCatUploads } from "../permissions";
+
+export { listLinks } from "../catLinks";
 
 export const MEDIA_EXTENSIONS = new Set([
   ".jpg",
@@ -69,7 +75,27 @@ export const data = new SlashCommandBuilder()
           .setRequired(true)
           .setAutocomplete(true),
       ),
-  );
+  )
+  .addSubcommand((sub) => sub.setName("review").setDescription("Review uploads from the upload site (managers)"))
+  .addSubcommand((sub) =>
+    sub
+      .setName("allow")
+      .setDescription("Let a user upload without review (managers)")
+      .addUserOption((o) => o.setName("user").setDescription("Who").setRequired(true)),
+  )
+  .addSubcommand((sub) =>
+    sub
+      .setName("deny")
+      .setDescription("Block a user from uploading (managers)")
+      .addUserOption((o) => o.setName("user").setDescription("Who").setRequired(true)),
+  )
+  .addSubcommand((sub) =>
+    sub
+      .setName("reset")
+      .setDescription("Put a user back to having uploads reviewed (managers)")
+      .addUserOption((o) => o.setName("user").setDescription("Who").setRequired(true)),
+  )
+  .addSubcommand((sub) => sub.setName("uploaders").setDescription("List allowed and denied uploaders (managers)"));
 
 function hasMediaExtension(file: string): boolean {
   const dot = file.lastIndexOf(".");
@@ -102,21 +128,6 @@ export function listMedia(catName: string): string[] {
           return false;
         }
       });
-  } catch {
-    return [];
-  }
-}
-
-// Links are stored one-per-line in <mediaDir>/<cat>/links.txt — posted
-// directly as message content (Discord auto-embeds them) rather than
-// downloaded, so there's no local storage or size limit to worry about.
-export function listLinks(catName: string): string[] {
-  const file = join(config.cats.mediaDir, catName, "links.txt");
-  try {
-    return readFileSync(file, "utf8")
-      .split(/\r?\n/)
-      .map((s) => s.trim())
-      .filter(Boolean);
   } catch {
     return [];
   }
@@ -184,12 +195,12 @@ export async function stretchImage(path: string, warp: Warp): Promise<Uint8Array
   return image.resize(w, h, { fit: "fill" }).bytes();
 }
 
-type CatMedia = { kind: "file"; path: string } | { kind: "link"; url: string };
+type CatMedia = { kind: "file"; path: string } | { kind: "link"; link: CatLink };
 
 function listAllMedia(catName: string): CatMedia[] {
   return [
     ...listMedia(catName).map((path): CatMedia => ({ kind: "file", path })),
-    ...listLinks(catName).map((url): CatMedia => ({ kind: "link", url })),
+    ...listLinks(catName).map((link): CatMedia => ({ kind: "link", link })),
   ];
 }
 
@@ -302,7 +313,7 @@ async function executeShow(interaction: ChatInputCommandInteraction) {
   const picked = media[Math.floor(Math.random() * media.length)]!;
 
   if (picked.kind === "link") {
-    await interaction.reply({ content: picked.url });
+    await interaction.reply({ content: linkContent(picked.link), allowedMentions: { parse: [] } });
     return;
   }
 
@@ -325,7 +336,14 @@ async function executeShow(interaction: ChatInputCommandInteraction) {
 
 async function executeAdd(interaction: ChatInputCommandInteraction) {
   const url = interaction.options.getString("url", true).trim();
-  const name = interaction.options.getString("name", true).toLowerCase().trim();
+  const name = normaliseCatName(interaction.options.getString("name", true));
+  if (!name) {
+    await interaction.reply({
+      content: "Cat names can only use letters, numbers, - and _ (max 32).",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
 
   if (!isValidMediaUrl(url)) {
     await interaction.reply({
@@ -343,24 +361,79 @@ async function executeAdd(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  if (listLinks(name).includes(url)) {
+  if (listLinks(name).some((l) => l.url === url)) {
     await interaction.editReply({ content: `That link is already in ${name}'s pool.` });
     return;
   }
 
-  const dir = join(config.cats.mediaDir, name);
-  mkdirSync(dir, { recursive: true });
-  appendFileSync(join(dir, "links.txt"), url + "\n");
+  appendLink(name, { url, uploaderId: interaction.user.id });
 
   await interaction.editReply({ content: `Added a link to ${name}'s pool.` });
 }
 
-export async function execute(interaction: ChatInputCommandInteraction) {
-  const sub = interaction.options.getSubcommand();
-  if (sub === "add") {
-    await executeAdd(interaction);
+// Link posts get a caption when we know who added it / what they called it.
+// Mentions are rendered but never pinged (callers pass allowedMentions: none).
+export function linkContent(link: CatLink): string {
+  const bits: string[] = [];
+  if (link.name) bits.push(escapeMarkdown(link.name));
+  if (link.uploaderId) bits.push(`from <@${link.uploaderId}>`);
+  return bits.length ? `${bits.join(" ")}\n${link.url}` : link.url;
+}
+
+async function executeReview(interaction: ChatInputCommandInteraction) {
+  const pending = listPending(5);
+  if (!pending.length) {
+    await interaction.reply({ content: "No uploads waiting for review.", flags: MessageFlags.Ephemeral });
     return;
   }
+  // One message per upload so each keeps its own buttons; the first is the reply.
+  for (const [i, upload] of pending.entries()) {
+    const msg = { ...buildReviewMessage(upload), flags: MessageFlags.Ephemeral as const };
+    if (i === 0) await interaction.reply(msg);
+    else await interaction.followUp(msg);
+  }
+}
+
+async function executeUploaderStatus(interaction: ChatInputCommandInteraction, sub: "allow" | "deny" | "reset") {
+  const user = interaction.options.getUser("user", true);
+  const status = sub === "allow" ? "allowed" : sub === "deny" ? "denied" : "review";
+  setUploaderStatus(user.id, status, interaction.user.id);
+  const what =
+    status === "allowed"
+      ? "can upload without review"
+      : status === "denied"
+        ? "can't upload any more"
+        : "is back to having uploads reviewed";
+  await interaction.reply({
+    content: `<@${user.id}> ${what}.`,
+    flags: MessageFlags.Ephemeral,
+    allowedMentions: { parse: [] },
+  });
+}
+
+async function executeUploaders(interaction: ChatInputCommandInteraction) {
+  const rows = listUploaders();
+  const line = (status: string) =>
+    rows.filter((r) => r.status === status).map((r) => `<@${r.userId}>`).join(", ") || "none";
+  await interaction.reply({
+    content: `Allowed (no review): ${line("allowed")}\nDenied: ${line("denied")}\nEveryone else's uploads wait for review.`,
+    flags: MessageFlags.Ephemeral,
+    allowedMentions: { parse: [] },
+  });
+}
+
+const MANAGER_SUBS = new Set(["review", "allow", "deny", "reset", "uploaders"]);
+
+export async function execute(interaction: ChatInputCommandInteraction) {
+  const sub = interaction.options.getSubcommand();
+  if (MANAGER_SUBS.has(sub) && !canManageCatUploads(interaction)) {
+    await interaction.reply({ content: "You can't manage cat uploads.", flags: MessageFlags.Ephemeral });
+    return;
+  }
+  if (sub === "add") return executeAdd(interaction);
+  if (sub === "review") return executeReview(interaction);
+  if (sub === "uploaders") return executeUploaders(interaction);
+  if (sub === "allow" || sub === "deny" || sub === "reset") return executeUploaderStatus(interaction, sub);
   await executeShow(interaction);
 }
 

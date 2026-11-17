@@ -14,7 +14,7 @@ Four main commands:
 - **`/cat`**: `show` (default-style usage) posts a random photo/video from a per-cat media folder (`CAT_MEDIA_DIR/<name>/`); defaults to `CAT_DEFAULT_NAME` (susan), `name:any` picks a random cat. Media can be local files or links: `add url:<link> name:<cat>` validates the URL (http(s), direct image/video extension, not a private/loopback host) and checks it's reachable, then appends it to `CAT_MEDIA_DIR/<name>/links.txt` (creating the cat folder if new) — links are posted directly as message content (Discord auto-embeds them) rather than downloaded. Optional `stretch:wide|tall|random` or `aspect:<ratio>` (`16:9`, `4x3`, `2.5`; 0.1–10, keeps pixel area roughly constant; mutually exclusive with `stretch`) on `show` restricts the pick to local .jpg/.png/.webp files and distorts it with the builtin `Bun.Image` (`resize(..., { fit: "fill" })`, longest side capped at 4096) before uploading — see `stretchImage()`. No database — reads the filesystem on each call.
 - **`/git`**: `status` shows the current commit and whether origin has new commits; `update` (role-gated) pulls, reinstalls deps, and restarts the bot process (guarded against overlapping runs — see "Auto-update" below); `log`/`search`/`show` browse the commit history — paginated embeds with Prev/Next buttons (`gitlog:<mode>:<page>:<query>` custom IDs, handled in `interactions/git.ts`), `search` filters by commit message, `show <hash>` displays a single commit's message and changed files; `tree` renders the repo's file/directory structure at a given ref (defaults to `HEAD`) as an indented tree, via `git.getFileTree()` — the ref is validated against a strict pattern and confirmed to resolve with `rev-parse --verify` before being passed to `ls-tree`, since it comes straight from user input. All read-only subcommands reply ephemerally, and commit text is always rendered inside code blocks / with `allowedMentions: { parse: [] }` since commit messages are attacker-influenceable free text. See `gitView.ts` for embed building.
 
-- **Cat upload site (`src/web/`, `bun run web`)**: separate Bun.serve process, not part of the shard manager. `oauth.ts` is an auth-code + PKCE client for the files server (`/oauth/authorize`, `/api/oauth/token`, `/api/oauth/userinfo`, `/api/oauth/revoke`; `profile` scope only — the token is revoked right after reading the username). `server.ts` keeps in-memory sessions (HttpOnly SameSite=Lax cookie, Origin check on POSTs), gates on `WEB_ALLOWED_USERS`. `upload.ts` validates cat name (`[a-z0-9][a-z0-9_-]{0,31}`), extension, magic bytes and size, and writes to `CAT_MEDIA_DIR/<cat>/` under a generated filename. `pages.ts` is plain HTML templates (escape everything with `escapeHtml`).
+- **Cat upload site (`src/web/`, `bun run web`)**: separate Bun.serve process, not part of the shard manager, sharing the sqlite DB with the bot. Login is Discord OAuth2 (`web/oauth.ts`, `identify` scope, the bot's own app: `CLIENT_ID` + `DISCORD_CLIENT_SECRET`; token revoked after reading `users/@me`; `GUILD_ID` membership checked with the bot token). Storage is one files-server account (`CAT_FILES_API_KEY`): `catUploads.ts` uploads/deletes there, tracks `cat_uploads` and `cat_uploaders` rows, and builds the review embed/buttons. `web/upload.ts` validates (extension, magic bytes, size, per-user pending cap), uploads, records the row, and posts it to `CAT_REVIEW_CHANNEL_ID` over Discord REST. Allowed uploaders' files are appended to `links.txt` immediately; others are `pending` until a manager clicks Approve / Approve with rename (modal: name + cat) / Approve + trust user / Deny (`interactions/catUploads.ts`; `reviewUpload()` is an atomic `WHERE status='pending'` claim so double clicks can't double-append). Denied files are deleted from the files server. `/cat review|allow|deny|reset|uploaders` gated by `canManageCatUploads()` (empty `CAT_MANAGER_ROLE_IDS` = admins only, unlike the other manager checks). `catLinks.ts` owns `links.txt` (`url[\tname[\tuploaderId]]`) and `normaliseCatName()`; `/cat show` captions links as `<name> from <@id>` with mentions suppressed. Denied users lose their session on the next request. `server.ts` sessions are in memory (HttpOnly SameSite=Lax cookie + Origin check on POSTs); `pages.ts` is plain HTML (escape everything with `escapeHtml`).
 
 - **`/anime`, `/movie`, `/music`**: lookup commands that search AniList (anime/manga, GraphQL, no key), TMDB (movies/TV, needs `TMDB_API_KEY`, replies ephemerally that it's unset otherwise) and Deezer (track/album/artist, no key). Each service in `src/services/` normalises results to `MediaResult` (`services/media.ts`); `mediaView.ts` renders the top hit as an embed with the rest under "Also"; `utils/replyWithLookup.ts` is the shared defer/search/error flow. No database, nothing stored.
 
@@ -28,7 +28,7 @@ Tone: bot messages are plain text — no decorative emojis. RSVP emoji are opt-i
 bun run dev              # Auto-restart on changes
 bun run start            # Run the bot
 bun run deploy-commands  # Sync slash commands with Discord (useful before starting bot)
-bun run web              # Cat upload site (OAuth login via files server)
+bun run web              # Cat upload site (Discord login, files-server storage)
 ```
 
 All three commands use `src/index.ts` (dev/start) or `src/deploy-commands.ts` (deploy-commands) as entry points.
@@ -80,7 +80,7 @@ On startup, the bot syncs slash commands — any stale commands from older versi
 
 **Database Layer (`src/db.ts`)**
 - SQLite database initialized with WAL mode
-- Tables: `events`, `rsvps`, `prompts`, `prompt_usage`
+- Tables: `events`, `rsvps`, `prompts`, `prompt_usage`, `quiplash_boards`, `cat_uploads`, `cat_uploaders`
 - Exports TypeScript interfaces for all row types (EventRow, RsvpRow, PromptRow)
 - All DB queries use bun:sqlite's query builder with typed generics — avoid raw SQL
 
@@ -125,14 +125,14 @@ All knobs in `.env` (see `.env.example`):
 - **Media**: `TMDB_API_KEY` (only `/movie` needs it)
 - **Music playback**: `YTDLP_PATH`, `YTDLP_COOKIES_FILE`, `SPOTIFY_CLIENT_ID/SECRET`, `APPLE_MUSIC_TEAM_ID/KEY_ID/PRIVATE_KEY_PATH` (all optional), `MUSIC_MAX_QUEUE`, `MUSIC_MAX_PLAYLIST_IMPORT`, `MUSIC_IDLE_LEAVE_SECONDS`
 - **Cats**: `CAT_MEDIA_DIR`, `CAT_DEFAULT_NAME`, `CAT_MAX_UPLOAD_BYTES`
-- **Upload site**: `WEB_PORT`, `WEB_HOST`, `WEB_PUBLIC_URL`, `WEB_OAUTH_BASE`, `WEB_OAUTH_CLIENT_ID`, `WEB_OAUTH_CLIENT_SECRET`, `WEB_ALLOWED_USERS`, `WEB_SESSION_HOURS`
+- **Upload site**: `WEB_PORT`, `WEB_HOST`, `WEB_PUBLIC_URL`, `DISCORD_CLIENT_SECRET`, `WEB_SESSION_HOURS`, `CAT_FILES_BASE`, `CAT_FILES_API_KEY`, `CAT_FILES_DIRECTORY_ID`, `CAT_REVIEW_CHANNEL_ID`, `CAT_MANAGER_ROLE_IDS`, `CAT_MAX_PENDING_PER_USER`
 - **Auto-update**: `UPDATE_MANAGER_ROLE_IDS`, `AUTO_UPDATE_ENABLED`, `AUTO_UPDATE_POLL_INTERVAL_MS`, `AUTO_UPDATE_INSTALL_DEPS`
 - **Logging**: `LOG_LEVEL`, `LOG_PRETTY`, `LOG_CHANNEL_ID`
 - Config object in `src/config.ts` is the single source of truth; it has no defaults beyond fallbacks in the parsing helpers
 
 ## Common Patterns
 
-**Role-based Access**: Use `hasManagerRole(interaction, config.events.managerRoleIds)` or `config.quiplash.managerRoleIds`. If role list is empty, anyone can act. `hasManagerRole` always allows users whose ID is in `config.adminUserIds` (see `isAdmin()` in `src/permissions.ts`), regardless of role list.
+**Role-based Access** (cat upload moderation uses `canManageCatUploads()` instead — see above): Use `hasManagerRole(interaction, config.events.managerRoleIds)` or `config.quiplash.managerRoleIds`. If role list is empty, anyone can act. `hasManagerRole` always allows users whose ID is in `config.adminUserIds` (see `isAdmin()` in `src/permissions.ts`), regardless of role list.
 
 **Timestamps**: Store milliseconds since epoch in DB (JavaScript native). Format for Discord with `discordTimestamp(ms, "f" | "R")` — "f" for absolute, "R" for relative ("in 2 hours").
 
@@ -151,5 +151,7 @@ db.query<RsvpRow, [number]>("SELECT * FROM rsvps WHERE eventId = ?").all(eventId
 - **prompts**: id, guildId, category, text, addedBy, createdAt
 - **prompt_usage**: promptId, usedAt (tracks when each prompt was drawn for cooldown logic)
 - **quiplash_boards**: id, guildId, channelId, messageId, category (nullable — NULL means "all categories"), createdAt (tracks pinned `/quiplash latest` boards so they can be re-edited on every add/import/remove)
+- **cat_uploads**: id, cat, name, uploaderId, uploaderName, fileId (files server), url (raw link), contentType, status (pending/approved/denied), reviewedBy ("auto" for trusted uploaders), reviewChannelId, reviewMessageId, createdAt
+- **cat_uploaders**: userId, status (allowed/denied; no row = review), setBy, updatedAt
 
 All timestamps are milliseconds since epoch. Foreign keys are not enforced (bun:sqlite doesn't enable them by default).

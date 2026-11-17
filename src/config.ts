@@ -136,19 +136,26 @@ export const config = {
     discordChannelId: optional("LOG_CHANNEL_ID", ""),
   },
 
-  // Cat upload site (`bun run web`), logged in via OAuth against the files server.
+  // Cat upload site (`bun run web`). Uploaders log in with Discord; files are
+  // stored on the files server under one account (CAT_FILES_API_KEY).
   web: {
     port: int("WEB_PORT", 3080),
     host: optional("WEB_HOST", "127.0.0.1"),
-    // Public base URL of this site; the OAuth redirect is <publicUrl>/callback.
+    // Public base URL of this site; the Discord redirect is <publicUrl>/callback.
     publicUrl: optional("WEB_PUBLIC_URL", "http://localhost:3080").replace(/\/+$/, ""),
-    oauthBase: optional("WEB_OAUTH_BASE", "https://files.tinnyterr.com").replace(/\/+$/, ""),
-    oauthClientId: optional("WEB_OAUTH_CLIENT_ID", ""),
-    // Blank for a public client (PKCE only).
-    oauthClientSecret: optional("WEB_OAUTH_CLIENT_SECRET", ""),
-    // Usernames on the files server allowed to upload. Blank = anyone who can log in.
-    allowedUsers: roleList("WEB_ALLOWED_USERS").map((u) => u.toLowerCase()),
+    // OAuth2 secret of the bot's own Discord application (CLIENT_ID is the client id).
+    discordClientSecret: optional("DISCORD_CLIENT_SECRET", ""),
     sessionHours: int("WEB_SESSION_HOURS", 24 * 7),
+    filesBase: optional("CAT_FILES_BASE", "https://files.tinnyterr.com").replace(/\/+$/, ""),
+    filesApiKey: optional("CAT_FILES_API_KEY", ""),
+    // Optional folder on the files server to upload into.
+    filesDirectoryId: int("CAT_FILES_DIRECTORY_ID", 0),
+    // Where uploads needing review are posted with approve/deny buttons.
+    reviewChannelId: optional("CAT_REVIEW_CHANNEL_ID", ""),
+    // Who can review uploads and allow/deny uploaders. Blank = ADMIN_USER_IDS only.
+    managerRoleIds: roleList("CAT_MANAGER_ROLE_IDS"),
+    // Cap on one user's uploads waiting for review.
+    maxPendingPerUser: int("CAT_MAX_PENDING_PER_USER", 20),
   },
 };
 

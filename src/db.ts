@@ -75,6 +75,57 @@ db.exec(`
   );
 `);
 
+// Cat upload site (src/web/): who may upload, and each upload's review state.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cat_uploaders (
+    userId TEXT PRIMARY KEY,
+    status TEXT NOT NULL CHECK (status IN ('allowed', 'denied')),
+    setBy TEXT NOT NULL,
+    updatedAt INTEGER NOT NULL
+  );
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cat_uploads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cat TEXT NOT NULL,
+    name TEXT NOT NULL,
+    uploaderId TEXT NOT NULL,
+    uploaderName TEXT NOT NULL,
+    fileId INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    contentType TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'denied')),
+    reviewedBy TEXT,
+    reviewChannelId TEXT,
+    reviewMessageId TEXT,
+    createdAt INTEGER NOT NULL
+  );
+`);
+
+export interface CatUploaderRow {
+  userId: string;
+  status: "allowed" | "denied";
+  setBy: string;
+  updatedAt: number;
+}
+
+export interface CatUploadRow {
+  id: number;
+  cat: string;
+  name: string;
+  uploaderId: string;
+  uploaderName: string;
+  fileId: number;
+  url: string;
+  contentType: string;
+  status: "pending" | "approved" | "denied";
+  reviewedBy: string | null;
+  reviewChannelId: string | null;
+  reviewMessageId: string | null;
+  createdAt: number;
+}
+
 export interface EventRow {
   id: number;
   guildId: string;

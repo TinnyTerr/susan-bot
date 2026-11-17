@@ -20,6 +20,7 @@ const STYLE = `
   button.link { background: none; color: var(--muted); padding: 0; text-decoration: underline; }
   header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1.5rem; }
   ul { padding-left: 1.2rem; }
+  .row { display: grid; gap: .3rem; margin-bottom: .8rem; }
   .ok { color: #3a8d3a; } .err { color: #c0392b; }
 `;
 
@@ -36,17 +37,23 @@ export function loginPage(error?: string): string {
     `<h1>Cat uploads</h1>
 <p class="muted">Add photos and videos to the pool <code>/cat</code> draws from.</p>
 ${error ? `<p class="err">${escapeHtml(error)}</p>` : ""}
-<p><a class="button" href="/login">Log in with files.tinnyterr.com</a></p>`,
+<p><a class="button" href="/login">Log in with Discord</a></p>`,
   );
 }
 
 export interface UploadPageOpts {
   username: string;
+  trusted: boolean;
   cats: { name: string; count: number }[];
   defaultCat: string;
-  results?: { ok: string[]; failed: { name: string; reason: string }[]; cat: string };
+  results?: {
+    added: { name: string; pending: boolean }[];
+    failed: { name: string; reason: string }[];
+    cat: string;
+  };
   error?: string;
   maxMb: number;
+  slots: number;
 }
 
 export function uploadPage(o: UploadPageOpts): string {
@@ -57,12 +64,25 @@ export function uploadPage(o: UploadPageOpts): string {
 
   let results = "";
   if (o.results) {
-    const { ok, failed, cat } = o.results;
+    const { added, failed, cat } = o.results;
+    const live = added.filter((a) => !a.pending);
+    const queued = added.filter((a) => a.pending);
+    const names = (xs: { name: string }[]) => xs.map((x) => escapeHtml(x.name)).join(", ");
     results = `<div class="card" style="margin-bottom:1rem">
-${ok.length ? `<p class="ok">Added ${ok.length} file${ok.length === 1 ? "" : "s"} to ${escapeHtml(cat)}.</p>` : ""}
+${live.length ? `<p class="ok">Added to ${escapeHtml(cat)}: ${names(live)}</p>` : ""}
+${queued.length ? `<p>Waiting for review (${escapeHtml(cat)}): ${names(queued)}</p>` : ""}
 ${failed.length ? `<p class="err">Skipped:</p><ul>${failed.map((f) => `<li>${escapeHtml(f.name)}: ${escapeHtml(f.reason)}</li>`).join("")}</ul>` : ""}
 </div>`;
   }
+
+  const rows = Array.from(
+    { length: o.slots },
+    (_, i) => `<div class="row">
+    <input name="file${i}" type="file" ${i === 0 ? "required" : ""}
+      accept=".jpg,.jpeg,.png,.gif,.webp,.mp4,.mov,.webm,image/*,video/*">
+    <input name="name${i}" type="text" maxlength="80" placeholder="Name (optional, defaults to the filename)">
+  </div>`,
+  ).join("");
 
   return layout(
     "Cat uploads",
@@ -76,10 +96,10 @@ ${results}
   <input id="cat" name="cat" type="text" list="cats" required value="${escapeHtml(o.defaultCat)}"
     pattern="[A-Za-z0-9][A-Za-z0-9_\\-]{0,31}" title="letters, numbers, - and _ (new name makes a new cat)">
   <datalist id="cats">${options}</datalist>
-  <label for="files">Photos / videos</label>
-  <input id="files" name="files" type="file" multiple required
-    accept=".jpg,.jpeg,.png,.gif,.webp,.mp4,.mov,.webm,image/*,video/*">
-  <p class="muted">jpg, png, gif, webp, mp4, mov, webm. Up to ${o.maxMb} MB each.</p>
+  <label>Photos / videos</label>
+  ${rows}
+  <p class="muted">jpg, png, gif, webp, mp4, mov, webm. Up to ${o.maxMb} MB each.
+  ${o.trusted ? "Your uploads go straight in." : "Uploads are added once an admin approves them."}</p>
   <button type="submit">Upload</button>
 </form>
 <h2 style="font-size:1.1rem;margin-top:2rem">Cats</h2>
